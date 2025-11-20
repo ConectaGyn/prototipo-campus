@@ -122,6 +122,34 @@ export const getWeatherData = async (lat: number, lon: number): Promise<WeatherD
   }
 };
 
+// Busca apenas o clima atual para um ponto especifico (sem previsao) — util para os sensores individuais.
+export const getCurrentWeather = async (lat: number, lon: number): Promise<WeatherData['current']> => {
+  if (!API_KEY) {
+    throw new Error(API_KEY_ERROR_MESSAGE);
+  }
+
+  const currentWeatherUrl = `${API_BASE_URL}/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=pt_br`;
+
+  const response = await fetch(currentWeatherUrl);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+  }
+
+  const currentData = await response.json();
+  return {
+    dt: currentData.dt,
+    temp: currentData.main.temp,
+    feels_like: currentData.main.feels_like,
+    humidity: currentData.main.humidity,
+    pressure: currentData.main.pressure,
+    wind_speed: convertWindSpeedToKmh(currentData.wind.speed),
+    wind_deg: currentData.wind.deg,
+    rain: currentData.rain,
+    weather: currentData.weather,
+  };
+};
+
 export const getLocationName = async (lat: number, lon: number): Promise<string> => {
     if (!API_KEY) {
         throw new Error(API_KEY_ERROR_MESSAGE);

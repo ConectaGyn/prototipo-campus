@@ -4,7 +4,7 @@ import type { SensorData } from '../types.ts';
 import { getWeatherData, getLocationName } from '../services/weatherService.ts';
 
 // Declara o objeto L do Leaflet para o TypeScript para evitar erros,
-// já que ele é carregado globalmente a partir de um script.
+// ja que ele e carregado globalmente a partir de um script.
 declare const L: any;
 
 type RouteStopType = 'start' | 'via' | 'destination';
@@ -26,19 +26,19 @@ interface MapComponentProps {
 
 const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLocation, routePath, routeStops, highlightedSensors }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null); // Para guardar a instância do mapa
-  const markersRef = useRef<any[]>([]); // Para guardar as instâncias dos marcadores de sensores
-  const userMarkerRef = useRef<any>(null); // Para guardar a instância do marcador do usuário
-  const tempMarkerRef = useRef<any>(null); // Para guardar o marcador temporário de clique
+  const mapRef = useRef<any>(null); // Para guardar a instancia do mapa
+  const markersRef = useRef<any[]>([]); // Para guardar as instancias dos marcadores de sensores
+  const userMarkerRef = useRef<any>(null); // Para guardar a instancia do marcador do usuario
+  const tempMarkerRef = useRef<any>(null); // Para guardar o marcador temporario de clique
 
-  // Helper para criar ícones circulares (Bolinhas)
+  // Helper para criar icones circulares (Bolinhas)
   const getMarkerIcon = (level: string) => {
     let colorClass = 'bg-green-500';
     let pulseHtml = '';
 
     if (level === 'Alto') {
       colorClass = 'bg-red-600';
-      // Animação de pulso para risco alto
+      // Animacao de pulso para risco alto
       pulseHtml = '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>';
     } else if (level === 'Moderado') {
       colorClass = 'bg-yellow-500';
@@ -55,12 +55,12 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
       className: 'bg-transparent border-none',
       html: html,
       iconSize: [24, 24],
-      iconAnchor: [12, 12], // Centro do ícone
+      iconAnchor: [12, 12], // Centro do icone
       popupAnchor: [0, -12]
     });
   };
 
-  // Helper para criar ícone do usuário (Bolinha Azul)
+  // Helper para criar icone do usuario (Bolinha Azul)
   const getUserIcon = () => {
     const html = `
       <div class="relative flex items-center justify-center w-6 h-6">
@@ -78,7 +78,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
     });
   };
 
-  // Helper para criar ícone temporário (Bolinha Cinza)
+  // Helper para criar icone temporario (Bolinha Cinza)
   const getTempIcon = () => {
     const html = `
       <div class="relative flex items-center justify-center w-6 h-6">
@@ -125,7 +125,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
   // Efeito para lidar com cliques fora do mapa
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
-      // Se o clique não foi dentro do container do mapa e temos um marcador temporário
+      // Se o clique nao foi dentro do container do mapa e temos um marcador temporario
       if (mapContainerRef.current && !mapContainerRef.current.contains(event.target as Node)) {
         if (tempMarkerRef.current) {
           tempMarkerRef.current.remove();
@@ -161,13 +161,13 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
       mapRef.current.on('click', async (e: any) => {
         const { lat, lng } = e.latlng;
 
-        // Remove marcador temporário anterior, se existir
+        // Remove marcador temporario anterior, se existir
         if (tempMarkerRef.current) {
           tempMarkerRef.current.remove();
           tempMarkerRef.current = null;
         }
 
-        // Conteúdo de carregamento
+        // Conteudo de carregamento
         const loadingContent = `
           <div class="flex items-center gap-2 p-2 font-sans">
              <div class="w-4 h-4 border-2 border-cyan-600 border-t-transparent rounded-full animate-spin"></div>
@@ -211,8 +211,8 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
                         <img src="https://openweathermap.org/img/wn/${weather.weather[0].icon}.png" alt="${weather.weather[0].description}" class="w-8 h-8 -my-2" />
                         <span class="capitalize font-semibold text-cyan-700">${weather.weather[0].description}</span>
                     </div>
-                    <div class="flex justify-between"><span>Temperatura:</span> <span class="font-semibold text-slate-800">${weather.temp.toFixed(1)}°C</span></div>
-                    <div class="flex justify-between"><span>Sensação:</span> <span class="font-semibold">${weather.feels_like.toFixed(1)}°C</span></div>
+                    <div class="flex justify-between"><span>Temperatura:</span> <span class="font-semibold text-slate-800">${weather.temp.toFixed(1)}C</span></div>
+                    <div class="flex justify-between"><span>Sensacao:</span> <span class="font-semibold">${weather.feels_like.toFixed(1)}C</span></div>
                     <div class="flex justify-between"><span>Umidade:</span> <span class="font-semibold">${weather.humidity}%</span></div>
                     <div class="flex justify-between"><span>Vento:</span> <span class="font-semibold">${Math.round(weather.wind_speed)} km/h</span></div>
                   </div>
@@ -228,7 +228,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
             console.error("Erro ao buscar dados do ponto:", error);
             marker.setPopupContent(`
                 <div class="p-2 font-sans text-sm text-red-600 font-bold">
-                   Não foi possível carregar os dados deste local.
+                   Nao foi possivel carregar os dados deste local.
                 </div>
             `);
         }
@@ -252,9 +252,9 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
             
             ${riskLevel !== 'Nenhum' ? 
               `<div class="mt-2 pt-2 border-t font-bold text-center ${riskLevel === 'Alto' ? 'text-red-600' : 'text-yellow-600'}">
-                ⚠️ Risco ${riskLevel}
+                 Risco ${riskLevel}
                </div>` 
-              : '<div class="mt-2 pt-2 border-t font-bold text-center text-green-600">✓ Normal</div>'
+              : '<div class="mt-2 pt-2 border-t font-bold text-center text-green-600"> Normal</div>'
             }
           </div>
         </div>
@@ -270,7 +270,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
       markersRef.current.push(marker);
     });
 
-    // --- Gerenciamento do Marcador do Usuário ---
+    // --- Gerenciamento do Marcador do Usuario ---
     if (userMarkerRef.current) {
       userMarkerRef.current.remove();
       userMarkerRef.current = null;
@@ -280,10 +280,10 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
       userMarkerRef.current = L.marker([userLocation.lat, userLocation.lon], {
         icon: getUserIcon(),
         zIndexOffset: 1000,
-        title: "Sua localização"
+        title: "Sua localizacao"
       })
       .addTo(mapRef.current)
-      .bindPopup('<div class="font-sans font-bold text-slate-800 p-1">📍 Você está aqui</div>');
+      .bindPopup('<div class="font-sans font-bold text-slate-800 p-1"> Voce esta aqui</div>');
     }
 
     setTimeout(() => {
@@ -355,7 +355,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
   return (
     <div className="relative h-full w-full">
       <p className="sr-only">
-        Mapa interativo. Sensores climáticos e sua localização estão marcados. Clique em qualquer lugar do mapa para ver as condições climáticas daquele ponto específico.
+        Mapa interativo. Sensores climaticos e sua localizacao estao marcados. Clique em qualquer lugar do mapa para ver as condições climaticas daquele ponto especifico.
       </p>
       <div 
         ref={mapContainerRef} 

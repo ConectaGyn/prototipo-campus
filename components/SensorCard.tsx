@@ -6,9 +6,10 @@ import SpeakButton from './SpeakButton.tsx';
 
 interface SensorCardProps {
   sensor: SensorData;
+  onSelect?: (sensor: SensorData) => void;
 }
 
-const SensorCard: React.FC<SensorCardProps> = ({ sensor }) => {
+const SensorCard: React.FC<SensorCardProps> = ({ sensor, onSelect }) => {
   const { alert, location, temp, humidity, wind_speed } = sensor;
   const riskLevel = alert?.level || 'Nenhum';
 
@@ -42,10 +43,22 @@ const SensorCard: React.FC<SensorCardProps> = ({ sensor }) => {
   const styles = getRiskStyles();
 
   return (
-    <div className={`relative p-3 rounded-xl border shadow-sm transition-all duration-300 flex flex-col h-full w-full justify-between ${styles.container}`}>
+    <div
+      className={`relative p-3 sm:p-4 rounded-xl border shadow-sm transition-all duration-300 flex flex-col h-full w-full justify-between ${styles.container} ${onSelect ? 'cursor-pointer hover:shadow-lg focus-within:ring-2 focus-within:ring-cyan-500 focus:outline-none' : ''}`}
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : -1}
+      onClick={() => onSelect?.(sensor)}
+      onKeyDown={(e) => {
+        if (!onSelect) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(sensor);
+        }
+      }}
+    >
       
       <div>
-        {/* Cabeçalho: Local e Badge */}
+        {/* Cabecalho: Local e Badge */}
         <div className="flex justify-between items-center mb-2 gap-2">
             <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate flex-1" title={location}>
             {location}
@@ -55,16 +68,16 @@ const SensorCard: React.FC<SensorCardProps> = ({ sensor }) => {
             </div>
         </div>
 
-        {/* Bloco Principal: Temperatura e Ações */}
+        {/* Bloco Principal: Temperatura e Acoes */}
         <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-slate-700/50">
             <div className="flex items-center gap-1.5">
                 <ThermometerIcon className="w-5 h-5 text-slate-400 dark:text-slate-500" />
-                <span className="text-2xl font-bold text-slate-900 dark:text-white">{temp.toFixed(1)}°</span>
+                <span className="text-2xl font-bold text-slate-900 dark:text-white">{temp.toFixed(1)}°C</span>
             </div>
             <SpeakButton text={ttsText} label={`Ouvir dados de ${location}`} className="p-1.5 w-7 h-7 text-slate-400 hover:text-cyan-600 hover:bg-slate-100 dark:hover:bg-slate-700" />
         </div>
 
-        {/* Bloco Secundário: Umidade e Vento lado a lado */}
+        {/* Bloco Secundario: Umidade e Vento lado a lado */}
         <div className="grid grid-cols-2 gap-2">
             <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-lg">
                 <DropletIcon className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
@@ -77,7 +90,7 @@ const SensorCard: React.FC<SensorCardProps> = ({ sensor }) => {
         </div>
       </div>
 
-      {/* Alerta Compacto (Aparece só se houver risco) */}
+      {/* Alerta Compacto (Aparece so se houver risco) */}
       {alert && riskLevel !== 'Nenhum' && (
         <div className={`mt-2 text-[10px] p-1.5 rounded border border-opacity-20 bg-opacity-10 ${styles.text} border-current leading-tight font-medium`}>
           {alert.message}

@@ -1,22 +1,29 @@
 import type { CurrentWeather, SensorData, SensorAlert, SensorLocationDef, SimulationOverride } from '../types.ts';
 
 export const sensorLocations: SensorLocationDef[] = [
-  { id: 'setor-bueno', name: 'Setor Bueno', coords: { lat: -16.6995, lon: -49.2798 } },
-  { id: 'jardim-goias', name: 'Jardim Goiás', coords: { lat: -16.6970, lon: -49.2415 } },
-  { id: 'setor-marista', name: 'Setor Marista', coords: { lat: -16.6950, lon: -49.2700 } },
-  { id: 'centro', name: 'Centro', coords: { lat: -16.6786, lon: -49.2533 } },
-  { id: 'parque-amazonas', name: 'Parque Amazonas', coords: { lat: -16.7325, lon: -49.2794 } },
-  { id: 'jardim-america', name: 'Jardim América', coords: { lat: -16.7118, lon: -49.2795 } },
-  { id: 'setor-oeste', name: 'Setor Oeste', coords: { lat: -16.6789, lon: -49.2717 } },
-  { id: 'vila-nova', name: 'Vila Nova', coords: { lat: -16.6669, lon: -49.2381 } },
-  { id: 'setor-pedro-ludovico', name: 'St. Pedro Ludovico', coords: { lat: -16.7114, lon: -49.2573 } },
-  { id: 'parque-flamboyant', name: 'Parque Flamboyant', coords: { lat: -16.6983, lon: -49.2392 } },
+  { id: 'marginal-botafogo-jamel-cecilio', name: 'Marginal Botafogo x Viaduto Jamel Cecilio', coords: { lat: -16.701694, lon: -49.244306 } },
+  { id: 'marginal-botafogo-avenida-goias', name: 'Marginal Botafogo x Avenida Goias', coords: { lat: -16.653861, lon: -49.262556 } },
+  { id: 'vila-redencao-nonato-mota', name: 'Vila Redencao - Rua Nonato Mota', coords: { lat: -16.717972, lon: -49.246167 } },
+  { id: 'parque-amazonia-serrinha', name: 'Parque Amazonia - Feira de Santana x Serrinha', coords: { lat: -16.727750, lon: -49.272056 } },
+  { id: 'joao-bras-francisco-oliveira', name: 'Pq Industrial Joao Bras - Av. Francisco Alves de Oliveira', coords: { lat: -16.684667, lon: -49.354833 } },
+  { id: 'pedro-ludovico-radial-botafogo', name: 'Pedro Ludovico - 3a Radial x Corrego Botafogo', coords: { lat: -16.721889, lon: -49.250028 } },
+  { id: 'finsocial-vf82', name: 'Finsocial - Rua VF-82', coords: { lat: -16.628584, lon: -49.323695 } },
+  { id: 'finsocial-vf96', name: 'Finsocial - Rua VF-96', coords: { lat: -16.630667, lon: -49.319667 } },
+  { id: 'setor-sul-praca-ratinho', name: 'Setor Sul - Praca do Ratinho', coords: { lat: -16.691028, lon: -49.261194 } },
+  { id: 'goiania-viva-taquaral', name: 'Residencial Goiania Viva - Av. Gabriel H. Araujo x Corrego Taquaral', coords: { lat: -16.700917, lon: -49.347833 } },
+  { id: 'campinas-marechal-deodoro', name: 'Campinas - Av. Marechal Deodoro', coords: { lat: -16.665278, lon: -49.295944 } },
+  { id: 'campinas-jose-hermano-neropolis', name: 'Campinas/Perim - Av. Jose Hermano x Av. Neropolis', coords: { lat: -16.655417, lon: -49.289972 } },
+  { id: 'campinas-rio-grande-sul', name: 'Campinas - Av. Rio Grande do Sul', coords: { lat: -16.666056, lon: -49.296667 } },
+  { id: 'campinas-sergipe', name: 'Campinas - Av. Sergipe', coords: { lat: -16.664000, lon: -49.296833 } },
+  { id: 'campininha-das-flores', name: 'Parque Campininha das Flores - Campinas', coords: { lat: -16.663917, lon: -49.298139 } },
+  { id: 'vila-montecelli-perimetral', name: 'Vila Montecelli - Av. Perimetral', coords: { lat: -16.647944, lon: -49.250722 } },
+  { id: 'setor-norte-ferroviario-contorno', name: 'Regiao 44 Norte - Av. Contorno', coords: { lat: -16.657389, lon: -49.256389 } },
 ];
 
 const clamp = (num: number, min: number, max: number) => Math.min(Math.max(num, min), max);
 
 /**
- * Calcula o nível de risco para um único sensor com base em seus dados.
+ * Calcula o nivel de risco para um unico sensor com base em seus dados.
  */
 const calculateSensorRisk = (sensor: Omit<SensorData, 'id' | 'location' | 'alert' | 'coords'>): SensorAlert => {
   const { temp, humidity, wind_speed } = sensor;
@@ -40,22 +47,25 @@ const calculateSensorRisk = (sensor: Omit<SensorData, 'id' | 'location' | 'alert
 
 /**
  * Gera dados simulados para uma rede de sensores.
- * @param baseWeather Os dados climáticos atuais da API para usar como base.
- * @param simulationEnabled Se a simulação está ligada globalmente.
+ * @param baseWeather Os dados climaticos atuais da API para usar como base.
+ * @param simulationEnabled Se a simulacao esta ligada globalmente.
  * @param overrides Mapa de sobrescritas por ID do sensor.
  */
 export const generateSimulatedSensorData = (
-  baseWeather: CurrentWeather, 
+  baseWeather: CurrentWeather,
   simulationEnabled: boolean,
-  overrides: Record<string, SimulationOverride>
+  overrides: Record<string, SimulationOverride>,
+  sensorWeatherMap?: Record<string, CurrentWeather>
 ): SensorData[] => {
   
   const now = Date.now();
 
   return sensorLocations.map((location) => {
+    // Usa o clima real do sensor quando disponivel; caso contrario, usa o clima do usuario como base.
+    const baseForSensor = sensorWeatherMap?.[location.id] ?? baseWeather;
     let sensorMetrics;
     
-    // Verifica se existe uma regra de simulação ativa para este sensor específico
+    // Verifica se existe uma regra de simulacao ativa para este sensor especifico
     const override = simulationEnabled ? overrides[location.id] : null;
     const isActiveOverride = override && override.endTime > now && override.intensity !== 'Normal';
 
@@ -74,29 +84,25 @@ export const generateSimulatedSensorData = (
         wind_speed: Math.round(25 + Math.random() * 10)
       };
     } else {
-      // Comportamento Padrão (Sem risco ou simulação expirada): Variação aleatória baseada no clima real
+      // Comportamento Padrao (Sem risco ou simulacao expirada): Variacao aleatoria baseada no clima real
       const tempVariation = (Math.random() - 0.5) * 3; // +/- 1.5 graus
       const humidityVariation = (Math.random() - 0.5) * 10; // +/- 5%
       const windVariation = (Math.random() - 0.5) * 10; // +/- 5 km/h
 
       sensorMetrics = {
-        temp: parseFloat((baseWeather.temp + tempVariation).toFixed(1)),
-        humidity: Math.round(clamp(baseWeather.humidity + humidityVariation, 0, 100)),
-        wind_speed: Math.round(Math.max(0, baseWeather.wind_speed + windVariation)),
+        temp: parseFloat((baseForSensor.temp + tempVariation).toFixed(1)),
+        humidity: Math.round(clamp(baseForSensor.humidity + humidityVariation, 0, 100)),
+        wind_speed: Math.round(Math.max(0, baseForSensor.wind_speed + windVariation)),
       };
     }
 
     let alert: SensorAlert | undefined;
 
-    // Calcula o risco e gera alerta APENAS se for um override ativo.
-    // No modo normal, assumimos que as variações aleatórias não devem disparar alarmes falsos no app.
-    if (isActiveOverride) {
-      const calculatedAlert = calculateSensorRisk(sensorMetrics);
-      if (calculatedAlert.level !== 'Nenhum') {
-        alert = calculatedAlert;
-      }
+    // Calcula o risco com base nas metricas atuais (natural ou simulada).
+    const calculatedAlert = calculateSensorRisk(sensorMetrics);
+    if (calculatedAlert.level != 'Nenhum') {
+      alert = calculatedAlert;
     }
-
     return {
       id: location.id,
       location: location.name,

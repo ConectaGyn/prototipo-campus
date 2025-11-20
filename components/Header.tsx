@@ -53,14 +53,14 @@ const Header: React.FC<HeaderProps> = ({
           aria-label={isSoundEnabled ? "Desativar sons de notificação" : "Ativar sons de notificação"}
           title={isSoundEnabled ? "Silenciar notificações" : "Ativar sons"}
         >
-          {isSoundEnabled ? (
-            <Volume2Icon className="w-5 h-5 text-slate-800 dark:text-slate-200" />
-          ) : (
-            <VolumeXIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />
-          )}
-        </button>
+        {isSoundEnabled ? (
+          <Volume2Icon className="w-5 h-5 text-slate-800 dark:text-slate-200" />
+        ) : (
+          <VolumeXIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+        )}
+      </button>
 
-        <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+      <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
         
         <button
           onClick={onRefresh}

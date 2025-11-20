@@ -1,8 +1,8 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import type { SensorData } from '../types.ts';
 import SensorCard from './SensorCard.tsx';
-import { ChevronLeftIcon, ChevronRightIcon } from './Icons.tsx';
+import { ChevronLeftIcon, ChevronRightIcon, XIcon, MapPinIcon, AlertTriangleIcon, CheckCircleIcon, WindIcon, DropletIcon, ThermometerIcon } from './Icons.tsx';
 
 interface SensorCarouselProps {
   sensors: SensorData[];
@@ -10,6 +10,7 @@ interface SensorCarouselProps {
 
 const SensorCarousel: React.FC<SensorCarouselProps> = ({ sensors }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [selectedSensor, setSelectedSensor] = useState<SensorData | null>(null);
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {
@@ -33,7 +34,7 @@ const SensorCarousel: React.FC<SensorCarouselProps> = ({ sensors }) => {
         <ChevronLeftIcon className="w-6 h-6 text-slate-700 dark:text-slate-200" aria-hidden="true" />
       </button>
 
-      <div ref={scrollContainerRef} className="flex overflow-x-auto space-x-4 pb-4 scroll-smooth" role="region" aria-label="Lista de cartões de sensores" tabIndex={0}>
+      <div ref={scrollContainerRef} className="flex overflow-x-auto space-x-3 sm:space-x-4 pb-4 scroll-smooth px-2" role="region" aria-label="Lista de cartões de sensores" tabIndex={0}>
         {/* Hide scrollbar */}
         <style>{`
           .overflow-x-auto::-webkit-scrollbar { 
@@ -45,8 +46,8 @@ const SensorCarousel: React.FC<SensorCarouselProps> = ({ sensors }) => {
           }
         `}</style>
         {sensors.map(sensor => (
-          <article key={sensor.id} className="flex-shrink-0 w-60 sm:w-64">
-            <SensorCard sensor={sensor} />
+          <article key={sensor.id} className="flex-shrink-0 w-[78vw] sm:w-64">
+            <SensorCard sensor={sensor} onSelect={setSelectedSensor} />
           </article>
         ))}
       </div>
@@ -58,6 +59,69 @@ const SensorCarousel: React.FC<SensorCarouselProps> = ({ sensors }) => {
       >
         <ChevronRightIcon className="w-6 h-6 text-slate-700 dark:text-slate-200" aria-hidden="true" />
       </button>
+
+      {selectedSensor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-lg w-full p-5 sm:p-6 relative border border-slate-200 dark:border-slate-700 max-h-[85vh] overflow-y-auto">
+            <button
+              onClick={() => setSelectedSensor(null)}
+              className="absolute top-4 right-4 p-2 rounded-full text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-700"
+              aria-label="Fechar detalhes do sensor"
+            >
+              <XIcon className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-3 mb-4">
+              <MapPinIcon className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Sensor</p>
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white">{selectedSensor.location}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Lat {selectedSensor.coords.lat.toFixed(4)} | Lon {selectedSensor.coords.lon.toFixed(4)}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                <ThermometerIcon className="w-5 h-5 text-red-500" />
+                <div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Temperatura</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">{selectedSensor.temp.toFixed(1)}°C</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                <DropletIcon className="w-5 h-5 text-cyan-500" />
+                <div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Umidade</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">{Math.round(selectedSensor.humidity)}%</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                <WindIcon className="w-5 h-5 text-slate-500" />
+                <div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Vento</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">{Math.round(selectedSensor.wind_speed)} km/h</p>
+                </div>
+              </div>
+            </div>
+            <div className={`p-3 rounded-xl border flex items-center gap-3 mb-4 ${selectedSensor.alert ? 'border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-900/30' : 'border-green-200 bg-green-50 dark:border-green-700 dark:bg-green-900/30'}`}>
+              {selectedSensor.alert ? (
+                <AlertTriangleIcon className="w-6 h-6 text-amber-500" />
+              ) : (
+                <CheckCircleIcon className="w-6 h-6 text-green-500" />
+              )}
+              <div>
+                <p className="text-sm font-semibold text-slate-800 dark:text-white">
+                  {selectedSensor.alert ? `Risco ${selectedSensor.alert.level}` : 'Sem risco'}
+                </p>
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  {selectedSensor.alert ? selectedSensor.alert.message : 'Condições estáveis no momento.'}
+                </p>
+              </div>
+            </div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              <p>ID: {selectedSensor.id}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

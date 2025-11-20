@@ -15,17 +15,17 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, soundEnabled }) => {
   const { speak } = useTTS();
 
   useEffect(() => {
-    // Toca o som se o nível do alerta mudou em relação ao anterior (ou na montagem inicial)
+    // Toca o som se o nivel do alerta mudou em relacao ao anterior (ou na montagem inicial)
     // e se o som estiver habilitado.
     if (soundEnabled && alert.level !== prevAlertLevel.current) {
       playRiskSound(alert.level);
       
-      // Se o nível for crítico (Alto ou Moderado), lê o alerta automaticamente após o som
+      // Se o nivel for critico (Alto ou Moderado), le o alerta automaticamente apos o som
       if (alert.level === 'Alto' || alert.level === 'Moderado') {
-        // Texto simplificado: "Atenção." + Mensagem completa (que já contém níveis e locais)
-        const autoSpeakText = `Atenção. ${alert.message}`;
+        // Texto simplificado: "Atencao." + Mensagem completa (que ja contem niveis e locais)
+        const autoSpeakText = `Atencao. ${alert.message}`;
         
-        // Pequeno delay (1.2s) para não sobrepor o som de alerta inicial
+        // Pequeno delay (1.2s) para nao sobrepor o som de alerta inicial
         setTimeout(() => {
           speak(autoSpeakText);
         }, 1200);
@@ -35,7 +35,7 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, soundEnabled }) => {
     }
   }, [alert, soundEnabled, speak]);
 
-  const alertText = `Atenção. Nível de risco ${alert.level}. ${alert.message}`;
+  const alertText = `Atencao. Nivel de risco ${alert.level}. ${alert.message}`;
 
   return (
     <div 
@@ -48,7 +48,7 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, soundEnabled }) => {
       </div>
       <div className="flex-grow">
         <div className="text-xl font-bold text-white">
-            <span className="sr-only">Nível de Risco: </span>
+            <span className="sr-only">Nivel de Risco: </span>
             {alert.level}
         </div>
         <p className="text-white/90 pr-8">{alert.message}</p>
