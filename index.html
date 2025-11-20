@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ClimaGyn</title>
+    <script>
+      // Para evitar FOUC (Flash of Unstyled Content) e garantir que o Tailwind CDN detecte o modo de classe.
+      // Agora o padrão é 'light' (claro), a menos que 'dark' esteja explicitamente salvo no localStorage.
+      if (localStorage.theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Força o Tailwind a usar o modo de classe para o tema escuro, em vez de `prefers-color-scheme`.
+      // Isso é crucial para que o botão de alternância de tema funcione corretamente com a versão CDN.
+      tailwind.config = {
+        darkMode: 'class',
+      }
+    </script>
+    <!-- LeafletJS for MapComponent -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+      body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom": "https://aistudiocdn.com/react-dom@^18.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^18.2.0/",
+    "react/": "https://aistudiocdn.com/react@^18.2.0/",
+    "react": "https://aistudiocdn.com/react@^18.2.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+
+    <!-- VLibras Widget -->
+    <div vw class="enabled">
+      <div vw-access-button class="active"></div>
+      <div vw-plugin-wrapper>
+        <div class="vw-plugin-top-wrapper"></div>
+      </div>
+    </div>
+    <script src="https://vlibras.gov.br/app/vlibras-plugin.js"></script>
+    <script>
+      new window.VLibras.Widget('https://vlibras.gov.br/app');
+    </script>
+
+    <!-- EqualWeb Accessibility Widget -->
+    <script>
+      window.interdeal = {
+        "sitekey": "458164e31f463593063a29c419558505",
+        "Menulang": "PT-BR",
+        "domains": {
+          "js": "https://cdn.equalweb.com/",
+          "acc": "https://access.equalweb.com/"
+        },
+        "btnStyle": {
+          "vPosition": [
+            "85%",
+            null
+          ],
+          "scale": [
+            "0.5",
+            "0.5"
+          ],
+          "icon": {
+            "type": 7,
+            "shape": "semicircle",
+            "outline": false
+          },
+          "color": {
+            "main": "#0891b2", 
+            "second": "#ffffff"
+          }
+        }
+      };
+      (function(doc, head, body){
+        var coreCall             = doc.createElement('script');
+        coreCall.src             = 'https://cdn.equalweb.com/core/4.6.0/accessibility.js';
+        coreCall.defer           = true;
+        coreCall.integrity       = 'sha512-V5601eddbbYpryC8L5QJKcWDmTAjYxy4kZhl75w2PLvn1g8qys09S2G8Fv4E2nI3Mvda6KiT14p332Ym4o8k1w==';
+        coreCall.crossOrigin     = 'anonymous';
+        coreCall.setAttribute('data-cfasync', true );
+        body? body.appendChild(coreCall) : head.appendChild(coreCall);
+      })(document, document.head, document.body);
+    </script>
+  </body>
+</html>

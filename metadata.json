@@ -1,0 +1,7 @@
+{
+  "name": "ClimaGyn",
+  "description": "Um aplicativo web responsivo para monitorar os dados climáticos de Goiânia, exibindo informações atuais, previsões futuras e alertas de risco meteorológico com base em diferentes níveis de severidade.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
