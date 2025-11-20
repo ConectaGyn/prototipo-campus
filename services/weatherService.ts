@@ -1,10 +1,10 @@
 import type { WeatherData, DailyForecast, HourlyForecast } from '../types.ts';
 
 // A chave de API agora é lida de variáveis de ambiente para maior segurança.
-const API_KEY='6cc0bcb945a2718ab3cb7719c747a08f';
+const API_KEY = import.meta.env.VITE_WEATHER_API_KEY;
 const API_BASE_URL = 'https://api.openweathermap.org/data/2.5';
 const GEO_API_BASE_URL = 'https://api.openweathermap.org/geo/1.0/reverse';
-const API_KEY_ERROR_MESSAGE = "Chave de API do OpenWeatherMap não configurada. Por favor, certifique-se de que a variável de ambiente API_KEY está definida corretamente.";
+const API_KEY_ERROR_MESSAGE = "Chave de API do OpenWeatherMap não configurada. Defina VITE_WEATHER_API_KEY no arquivo .env.local.";
 
 // A API da OpenWeather retorna a velocidade do vento em m/s. Convertendo para km/h.
 const convertWindSpeedToKmh = (speedInMps: number): number => {
