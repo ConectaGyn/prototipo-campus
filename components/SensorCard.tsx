@@ -10,7 +10,7 @@ interface SensorCardProps {
 }
 
 const SensorCard: React.FC<SensorCardProps> = ({ sensor, onSelect }) => {
-  const { alert, location, temp, humidity, wind_speed } = sensor;
+  const { alert, location, temp, humidity, wind_speed, level } = sensor;
   const riskLevel = alert?.level || 'Nenhum';
 
   // Texto para leitura em voz alta
@@ -87,6 +87,12 @@ const SensorCard: React.FC<SensorCardProps> = ({ sensor, onSelect }) => {
                 <WindIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span>{Math.round(wind_speed)} km/h</span>
             </div>
+            {level !== undefined && level !== null && (
+              <div className="col-span-2 flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-lg">
+                <span>Nivel</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-100">{level}</span>
+              </div>
+            )}
         </div>
       </div>
 

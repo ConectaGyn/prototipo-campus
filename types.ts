@@ -64,8 +64,20 @@ export interface SensorData {
   temp: number;
   humidity: number;
   wind_speed: number;
+  level?: number | null;
+  timestamp?: string | null;
   coords: { lat: number; lon: number; };
   alert?: SensorAlert;
+}
+
+export interface BackendSensorReading {
+  sensorId?: string | null;
+  location?: string | null;
+  temp: number | null;
+  humidity: number | null;
+  wind_speed: number | null;
+  level?: number | null;
+  timestamp?: string | null;
 }
 
 export type SimulationIntensity = 'Normal' | 'Moderado' | 'Alto';

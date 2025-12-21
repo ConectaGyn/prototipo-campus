@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { WeatherData, RiskAlert, SensorData, SimulationState, CurrentWeather } from './types.ts';
-import { getWeatherData, getLocationName, getCurrentWeather } from './services/weatherService.ts';
-import { generateSimulatedSensorData, sensorLocations } from './services/sensorService.ts';
+import type { WeatherData, RiskAlert, SensorData, CurrentWeather, BackendSensorReading } from './types.ts';
+import { getWeatherData, getLocationName } from './services/weatherService.ts';
+import { calculateSensorRisk, sensorLocations } from './services/sensorService.ts';
+import { fetchLatestSensors } from './services/sensorApi.ts';
 import { calculateDistance } from './utils/geoUtils.ts';
 import Header from './components/Header.tsx';
 import WeatherCard from './components/WeatherCard.tsx';
@@ -11,9 +12,8 @@ import LoadingSpinner from './components/LoadingSpinner.tsx';
 import SensorCarousel from './components/SensorCarousel.tsx';
 import Tabs from './components/Tabs.tsx';
 import MapComponent from './components/MapComponent.tsx';
-import SimulationConfigModal from './components/SimulationConfigModal.tsx';
 import SafetyInfo from './components/SafetyInfo.tsx';
-import { CheckCircleIcon, AlertTriangleIcon, MenuIcon, XIcon, WeatherIcon, SlidersIcon, Volume2Icon, VolumeXIcon, RefreshCwIcon, EyeIcon, EyeOffIcon, MapPinIcon } from './components/Icons.tsx';
+import { CheckCircleIcon, AlertTriangleIcon, MenuIcon, XIcon, WeatherIcon, Volume2Icon, VolumeXIcon, RefreshCwIcon, EyeIcon, EyeOffIcon, MapPinIcon } from './components/Icons.tsx';
 import { useTheme } from './hooks/useTheme.ts';
 
 // Import necessario para o componente ThemeToggle dentro do App
@@ -26,18 +26,33 @@ const GOIANIA_COORDS = {
   lon: -49.2648,
 };
 
+const SETOR_UNIVERSITARIO_COORDS = {
+  lat: -16.6792,
+  lon: -49.2538,
+};
+
+const offsetCoords = (base: { lat: number; lon: number }, seed: number) => {
+  const hash = Math.sin(seed * 9973) * 10000;
+  const jitterLat = ((hash % 1) - 0.5) * 0.006;
+  const jitterLon = (((hash * 1.3) % 1) - 0.5) * 0.006;
+  return {
+    lat: base.lat + jitterLat,
+    lon: base.lon + jitterLon,
+  };
+};
+
 const App: React.FC = () => {
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [displayedCurrentWeather, setDisplayedCurrentWeather] = useState<CurrentWeather | null>(null);
 
   const [sensorData, setSensorData] = useState<SensorData[]>([]);
   const [currentCoords, setCurrentCoords] = useState<{ lat: number, lon: number } | null>(null);
+  const [backendReadings, setBackendReadings] = useState<BackendSensorReading[] | null>(null);
   const [riskAlert, setRiskAlert] = useState<RiskAlert | null>(null);
   const [userWeatherReport, setUserWeatherReport] = useState<string | null>(null);
   const [userReportNotice, setUserReportNotice] = useState<string | null>(null);
   const [showUserReportMobile, setShowUserReportMobile] = useState(true);
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
-  const [sensorWeatherMap, setSensorWeatherMap] = useState<Record<string, CurrentWeather>>({});
   const [locationName, setLocationName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -46,12 +61,6 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState(0); // Controle manual de abas para gerenciar layout mobile/desktop
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showMobileDetails, setShowMobileDetails] = useState(true); // Controle de visibilidade dos overlays mobile
-
-  const [simulationState, setSimulationState] = useState<SimulationState>({
-    isEnabled: false,
-    overrides: {}
-  });
-  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
   const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -93,19 +102,26 @@ const App: React.FC = () => {
     const humidity = current.humidity;
     const pop = hourly[0]?.pop ?? 0;
     const rain1h = current.rain?.['1h'] ?? 0;
+    const highReasons = [];
+    if (windKmh > 60) highReasons.push(`vento ${Math.round(windKmh)} km/h (>60)`);
+    if (rain1h > 5) highReasons.push(`chuva 1h ${rain1h.toFixed(1)} mm (>5)`);
+    const moderateReasons = [];
+    if (windKmh > 50) moderateReasons.push(`vento ${Math.round(windKmh)} km/h (>50)`);
+    if (humidity > 95) moderateReasons.push(`umidade ${Math.round(humidity)}% (>95)`);
+    if (pop > 0.9) moderateReasons.push(`prob. chuva ${Math.round(pop * 100)}% (>90%)`);
 
     if (windKmh > 60 || rain1h > 5) {
       return {
         level: 'Alto',
-        message: 'Risco de ventos muito fortes ou chuva intensa. Evite atividades ao ar livre e proteja-se.',
+        message: `Risco de ventos muito fortes ou chuva intensa. Motivos: ${highReasons.join("; ")}.`,
         color: 'bg-red-500 border-red-700',
         icon: <AlertTriangleIcon className="w-8 h-8 text-white" />,
       };
     }
-    if (windKmh > 40 || humidity > 90 || pop > 0.7) {
+    if (windKmh > 50 || humidity > 95 || pop > 0.9) {
       return {
         level: 'Moderado',
-        message: 'Ventos fortes, alta umidade ou alta probabilidade de chuva. Esteja atento as Condições.',
+        message: `Ventos fortes, alta umidade ou alta probabilidade de chuva. Motivos: ${moderateReasons.join("; ")}.`,
         color: 'bg-yellow-500 border-yellow-700',
         icon: <AlertTriangleIcon className="w-8 h-8 text-white" />,
       };
@@ -161,16 +177,50 @@ const App: React.FC = () => {
     }
   }, [weatherData, displayedCurrentWeather, sensorData, calculateRiskLevel]);
 
-  const generateAndSortSensors = useCallback((
-    weather: CurrentWeather,
-    userLat: number,
-    userLon: number,
-    simState: SimulationState
+  const buildSensorsFromBackend = useCallback((
+    readings: BackendSensorReading[] | null,
+    userCoords: { lat: number; lon: number } | null
   ) => {
-    const generated = generateSimulatedSensorData(weather, simState.isEnabled, simState.overrides);
-    return generated.sort((a, b) => {
-      const distA = calculateDistance(userLat, userLon, a.coords.lat, a.coords.lon);
-      const distB = calculateDistance(userLat, userLon, b.coords.lat, b.coords.lon);
+    if (!readings || readings.length === 0) return [];
+
+    const locationsById = new Map(sensorLocations.map(location => [location.id, location]));
+    const locationsByName = new Map(sensorLocations.map(location => [location.name, location]));
+
+    const sensors = readings.map((reading, index) => {
+      const temp = reading.temp;
+      const humidity = reading.humidity;
+      const wind_speed = reading.wind_speed ?? 0;
+
+      if (temp === null || temp === undefined || humidity === null || humidity === undefined) {
+        return null;
+      }
+
+      const matchedLocation = (reading.sensorId ? locationsById.get(reading.sensorId) : null)
+        || (reading.location ? locationsByName.get(reading.location) : null);
+
+      const coords = matchedLocation?.coords || offsetCoords(SETOR_UNIVERSITARIO_COORDS, index + 1);
+
+      const calculatedAlert = calculateSensorRisk({ temp, humidity, wind_speed });
+      const alert = calculatedAlert.level === 'Nenhum' ? undefined : calculatedAlert;
+
+      return {
+        id: matchedLocation?.id || reading.sensorId || `sensor-${index}`,
+        location: matchedLocation?.name || reading.location || 'Sensor real (Setor Universitario)',
+        coords,
+        temp,
+        humidity,
+        wind_speed,
+        level: reading.level ?? null,
+        timestamp: reading.timestamp ?? null,
+        ...(alert && { alert }),
+      };
+    }).filter(Boolean) as SensorData[];
+
+    if (!userCoords) return sensors;
+
+    return sensors.sort((a, b) => {
+      const distA = calculateDistance(userCoords.lat, userCoords.lon, a.coords.lat, a.coords.lon);
+      const distB = calculateDistance(userCoords.lat, userCoords.lon, b.coords.lat, b.coords.lon);
       return distA - distB;
     });
   }, []);
@@ -185,11 +235,9 @@ const App: React.FC = () => {
       setWeatherData(fetchedWeatherData);
       setDisplayedCurrentWeather(fetchedWeatherData.current);
 
-      const initialSensors = generateAndSortSensors(
-        fetchedWeatherData.current,
-        lat,
-        lon,
-        { isEnabled: false, overrides: {} }
+      const initialSensors = buildSensorsFromBackend(
+        backendReadings,
+        { lat, lon }
       );
       setSensorData(initialSensors);
 
@@ -208,7 +256,7 @@ const App: React.FC = () => {
       setSensorData([]);
       setCurrentCoords(null);
     }
-  }, [generateAndSortSensors]);
+  }, [buildSensorsFromBackend, backendReadings]);
 
   const updateUserLocationData = useCallback(async (isInitialOrManual: boolean) => {
     if (isFetchingRef.current) return;
@@ -265,17 +313,6 @@ const App: React.FC = () => {
     updateUserLocationData(true);
   }, [updateUserLocationData]);
 
-  const openConfigModal = () => setIsConfigModalOpen(true);
-  const closeConfigModal = () => setIsConfigModalOpen(false);
-
-  const saveSimulationConfig = (newState: SimulationState) => {
-    setSimulationState(newState);
-    if (weatherData && currentCoords) {
-      const newSensors = generateAndSortSensors(weatherData.current, currentCoords.lat, currentCoords.lon, newState);
-      setSensorData(newSensors);
-    }
-  };
-
   useEffect(() => {
     updateUserLocationData(true);
   }, []);
@@ -289,40 +326,37 @@ const App: React.FC = () => {
   }, [updateUserLocationData]);
 
   useEffect(() => {
-    if (!weatherData || !currentCoords) return;
+    const newSensors = buildSensorsFromBackend(
+      backendReadings,
+      currentCoords
+    );
+    setSensorData(newSensors);
+  }, [backendReadings, currentCoords, buildSensorsFromBackend]);
 
-    const fastInterval = setInterval(() => {
-      const newSensors = generateAndSortSensors(
-        weatherData.current,
-        currentCoords.lat,
-        currentCoords.lon,
-        simulationState
-      );
-      setSensorData(newSensors);
+  useEffect(() => {
+    let isActive = true;
+    const pollBackend = async () => {
+      try {
+        const data = await fetchLatestSensors();
+        if (!isActive) return;
+        if (data.error) {
+          setBackendReadings(null);
+          return;
+        }
+        setBackendReadings(Array.isArray(data.sensors) ? data.sensors : []);
+      } catch (err) {
+        if (!isActive) return;
+        setBackendReadings(null);
+      }
+    };
 
-      setDisplayedCurrentWeather(prev => {
-        if (!prev) return weatherData.current;
-        const base = weatherData.current;
-        const tempJitter = (Math.random() - 0.5) * 0.2;
-        const windJitter = (Math.random() - 0.5) * 2;
-
-        return {
-          ...prev,
-          temp: parseFloat((base.temp + tempJitter).toFixed(1)),
-          feels_like: parseFloat((base.feels_like + tempJitter).toFixed(1)),
-          wind_speed: Math.round(Math.max(0, base.wind_speed + windJitter)),
-          humidity: base.humidity,
-          pressure: base.pressure,
-          wind_deg: base.wind_deg,
-          rain: base.rain,
-          weather: base.weather
-        };
-      });
-
-    }, 5000);
-
-    return () => clearInterval(fastInterval);
-  }, [weatherData, currentCoords, generateAndSortSensors, simulationState]);
+    pollBackend();
+    const intervalId = setInterval(pollBackend, 10000);
+    return () => {
+      isActive = false;
+      clearInterval(intervalId);
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -340,7 +374,7 @@ const App: React.FC = () => {
         <div className="space-y-6 lg:space-y-8">
           {riskAlert && <AlertCard alert={riskAlert} soundEnabled={isSoundEnabled} />}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
-            <WeatherCard current={displayedCurrentWeather} />
+            <WeatherCard current={displayedCurrentWeather} precipitationProbability={weatherData?.hourly?.[0]?.pop} />
             <section className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-lg flex flex-col h-full" aria-labelledby="map-title">
               <div className="flex items-center justify-between mb-4 gap-3">
                 <h2 id="map-title" className="text-xl font-semibold text-slate-600 dark:text-slate-300">Mapa de Sensores</h2>
@@ -448,10 +482,12 @@ const App: React.FC = () => {
           {/* Floating Compact Action Bar (Menu + Configs when simplified) */}
           <div className="pointer-events-auto flex gap-2">
             <button
-              onClick={openConfigModal}
-              className={`p-2 rounded-full shadow-lg backdrop-blur-sm transition-colors ${simulationState.isEnabled ? 'bg-amber-100/90 text-amber-600' : 'bg-white/90 text-slate-500 dark:bg-slate-900/90 dark:text-slate-400'}`}
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="p-2 rounded-full shadow-lg backdrop-blur-sm transition-colors bg-amber-100/90 text-amber-600"
+              aria-label="Atualizar dados"
             >
-              <SlidersIcon className="w-4 h-4" />
+              <RefreshCwIcon className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             </button>
             <button onClick={toggleSound} className="p-2 rounded-full bg-white/90 dark:bg-slate-900/90 shadow-lg backdrop-blur-sm text-slate-500 dark:text-slate-400">
               {isSoundEnabled ? <Volume2Icon className="w-4 h-4" /> : <VolumeXIcon className="w-4 h-4" />}
@@ -478,12 +514,6 @@ const App: React.FC = () => {
                 <EyeOffIcon className="w-4 h-4" />
               </button>
               <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1"></div>
-              <button
-                onClick={openConfigModal}
-                className={`p-2 rounded-full ${simulationState.isEnabled ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}
-              >
-                <SlidersIcon className="w-4 h-4" />
-              </button>
               <button onClick={toggleSound} className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
                 {isSoundEnabled ? <Volume2Icon className="w-4 h-4" /> : <VolumeXIcon className="w-4 h-4" />}
               </button>
@@ -684,14 +714,12 @@ const App: React.FC = () => {
       <div className="hidden md:block max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
         <Header
           onRefresh={handleRefresh}
-          onOpenConfig={openConfigModal}
           locationName={locationName}
           isRefreshing={isRefreshing}
           theme={theme}
           toggleTheme={toggleTheme}
           isSoundEnabled={isSoundEnabled}
           toggleSound={toggleSound}
-          isSimulationActive={simulationState.isEnabled}
         />
         {weatherData && riskAlert && (
           <Tabs tabs={tabs} /> // O Tabs original controla seu proprio estado interno, mas aqui vamos deixar ele renderizar livremente
@@ -736,14 +764,10 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <SimulationConfigModal
-        isOpen={isConfigModalOpen}
-        onClose={closeConfigModal}
-        currentConfig={simulationState}
-        onSave={saveSimulationConfig}
-      />
     </div>
   );
 };
 
 export default App;
+
+

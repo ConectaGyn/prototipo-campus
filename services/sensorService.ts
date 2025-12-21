@@ -25,17 +25,17 @@ const clamp = (num: number, min: number, max: number) => Math.min(Math.max(num, 
 /**
  * Calcula o nivel de risco para um unico sensor com base em seus dados.
  */
-const calculateSensorRisk = (sensor: Omit<SensorData, 'id' | 'location' | 'alert' | 'coords'>): SensorAlert => {
+export const calculateSensorRisk = (sensor: Omit<SensorData, 'id' | 'location' | 'alert' | 'coords'>): SensorAlert => {
   const { temp, humidity, wind_speed } = sensor;
   
-  if (temp > 38 || wind_speed > 40) {
+  if (temp > 40 || wind_speed > 50) {
     return {
       level: 'Alto',
       message: 'Risco Alto: Temperatura muito alta ou ventos muito fortes.'
     };
   }
   
-  if (temp > 35 || humidity < 20 || wind_speed > 30) {
+  if (temp > 38 || humidity < 15 || wind_speed > 40) {
     return {
       level: 'Moderado',
       message: 'Risco Moderado: Condições de calor, baixa umidade ou vento forte.'
