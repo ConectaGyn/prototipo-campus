@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "server": "node server/sensorServer.js",
+    "server": "node backend/sensorServer.js",
     "build": "vite build",
     "preview": "vite preview"
   },
