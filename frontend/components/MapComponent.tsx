@@ -1,7 +1,9 @@
 
 import React, { useEffect, useRef } from 'react';
 import type { SensorData } from '../types.ts';
-import { getWeatherData, getLocationName } from '../services/weatherService.ts';
+import { getWeatherData, getLocationName } from '../services/weather/openWeather.service.ts';
+import { useState } from 'react';
+
 
 // Declara o objeto L do Leaflet para o TypeScript para evitar erros,
 // ja que ele e carregado globalmente a partir de um script.
@@ -29,7 +31,8 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
   const mapRef = useRef<any>(null); // Para guardar a instancia do mapa
   const markersRef = useRef<any[]>([]); // Para guardar as instancias dos marcadores de sensores
   const userMarkerRef = useRef<any>(null); // Para guardar a instancia do marcador do usuario
-  const tempMarkerRef = useRef<any>(null); // Para guardar o marcador temporario de clique
+  const tempMarkerRef = useRef<any>(null); // Para guardar o marcador temporario de 
+  const criticalMarkersRef = useRef<any[]>([]);
 
   // Helper para criar icones circulares (Bolinhas)
   const getMarkerIcon = (level: string) => {
@@ -64,7 +67,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
   const getUserIcon = () => {
     const html = `
       <div class="relative flex items-center justify-center w-6 h-6">
-        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-300 opacity-50"></span>
         <span class="relative inline-flex rounded-full h-4 w-4 bg-blue-600 border-2 border-white shadow-lg"></span>
       </div>
     `;
@@ -81,7 +84,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
   // Helper para criar icone temporario (Bolinha Cinza)
   const getTempIcon = () => {
     const html = `
-      <div class="relative flex items-center justify-center w-6 h-6">
+      <div class="relative flex items-center justify-center w-5 h-5">
          <span class="relative inline-flex rounded-full h-4 w-4 bg-slate-500 border-2 border-white shadow-lg"></span>
       </div>
     `;
@@ -205,8 +208,8 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
             
             const popupContent = `
                 <div class="font-sans p-1 min-w-[160px]">
-                  <h3 class="font-bold text-base text-slate-800 border-b pb-1 mb-2">${locName}</h3>
-                  <div class="space-y-1 text-sm text-slate-600">
+                  <h3 class="font-bold text-base text-slate-900 border-b pb-1 mb-2">${locName}</h3>
+                  <div class="space-y-1 text-sm text-slate-700">
                     <div class="flex items-center gap-2 mb-2">
                         <img src="https://openweathermap.org/img/wn/${weather.weather[0].icon}.png" alt="${weather.weather[0].description}" class="w-8 h-8 -my-2" />
                         <span class="capitalize font-semibold text-cyan-700">${weather.weather[0].description}</span>
@@ -243,26 +246,37 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
       const riskLevel = sensor.alert?.level || 'Nenhum';
       
       const popupContent = `
-        <div class="font-sans p-1 min-w-[150px]">
-          <h3 class="font-bold text-base text-slate-800 border-b pb-1 mb-2">${sensor.location}</h3>
-          <div class="space-y-1 text-sm text-slate-600">
-            <div class="flex justify-between"><span>Temp:</span> <span class="font-semibold">${sensor.temp.toFixed(1)}°C</span></div>
-            <div class="flex justify-between"><span>Umid:</span> <span class="font-semibold">${Math.round(sensor.humidity)}%</span></div>
-            <div class="flex justify-between"><span>Vento:</span> <span class="font-semibold">${Math.round(sensor.wind_speed)} km/h</span></div>
-            
-            ${riskLevel !== 'Nenhum' ? 
-              `<div class="mt-2 pt-2 border-t font-bold text-center ${riskLevel === 'Alto' ? 'text-red-600' : 'text-yellow-600'}">
-                 Risco ${riskLevel}
-               </div>` 
-              : '<div class="mt-2 pt-2 border-t font-bold text-center text-green-600"> Normal</div>'
-            }
+        <div class="font-sans p-2 min-w-[180px]">
+          <h3 class="font-bold text-base text-slate-900 border-b pb-1 mb-2">
+            ${sensor.location}
+          </h3>
+
+          <div class="space-y-1 text-sm text-slate-700">
+            <div class="flex justify-between"><span>Temperatura:</span><span class="font-semibold">${sensor.temp.toFixed(1)}°C</span></div>
+            <div class="flex justify-between"><span>Umidade:</span><span class="font-semibold">${Math.round(sensor.humidity)}%</span></div>
+            <div class="flex justify-between"><span>Vento:</span><span class="font-semibold">${Math.round(sensor.wind_speed)} km/h</span></div>
+          </div>
+
+          <div class="mt-3 pt-2 border-t text-center font-bold ${
+            riskLevel === 'Alto'
+              ? 'text-red-600'
+              : riskLevel === 'Moderado'
+                ? 'text-yellow-600'
+                : 'text-green-600'
+          }">
+            ${riskLevel !== 'Nenhum' ? `Risco ${riskLevel}` : 'Sem risco'}
+          </div>
+
+          <div class="mt-2 text-xs text-slate-400 text-center italic">
+            Ponto crítico monitorado
           </div>
         </div>
-      `;
+     `;
       
       const marker = L.marker([sensor.coords.lat, sensor.coords.lon], {
         icon: getMarkerIcon(riskLevel),
-        title: `Sensor em ${sensor.location} - Risco ${riskLevel}`
+        title: `Ponto critico: ${sensor.location}`,
+        zIndexOffset: 800,
       })
         .addTo(mapRef.current)
         .bindPopup(popupContent);
@@ -359,7 +373,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
       </p>
       <div 
         ref={mapContainerRef} 
-        className={className || "h-96 md:h-[480px] w-full rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 z-0"}
+        className={className || "h-[420px] md:h-[520px] w-full rounded-2xl shadow-md border border-slate-200 dark:border-slate-700"}
         aria-hidden="true" 
         tabIndex={-1}
       />
