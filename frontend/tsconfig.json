@@ -18,10 +18,15 @@
     "moduleDetection": "force",
     "allowJs": true,
     "jsx": "react-jsx",
+    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./*"
-      ]
+      ],
+      "@services/*": ["services/*"],
+      "@domains/*": ["domains/*"],
+      "@components/*": ["components/*"],
+      "@utils/*": ["utils/*"]
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
