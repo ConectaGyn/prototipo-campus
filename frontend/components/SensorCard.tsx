@@ -11,31 +11,33 @@ interface SensorCardProps {
 
 const SensorCard: React.FC<SensorCardProps> = ({ sensor, onSelect }) => {
   const { alert, location, temp, humidity, wind_speed } = sensor;
-  const riskLevel = alert?.level || 'Nenhum';
+  const riskLevel = alert? alert.level : 'Sem risco';
 
   // Texto para leitura em voz alta
-  const ttsText = `Sensor em ${location}. Risco ${riskLevel}. Temperatura ${temp.toFixed(1)} graus. Umidade ${Math.round(humidity)} por cento. Vento ${Math.round(wind_speed)} quilômetros por hora.`;
+  const ttsText = `Ponto crítico em ${location}. ${
+    alert ? `Risco ${riskLevel}.` : 'Risco não identificado no momento.'
+  } Temperatura ${temp.toFixed(1)} graus. Umidade ${Math.round(humidity)} por cento. Vento ${Math.round(wind_speed)} quilômetros por hora.`;
 
   // Configurações visuais baseadas no nível de risco
   const getRiskStyles = () => {
     switch (riskLevel) {
       case 'Alto':
         return {
-          container: 'bg-red-50 dark:bg-red-900/30 border-red-500 dark:border-red-500',
+          container: 'bg-white-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700',
           badge: 'bg-red-500 text-white',
           text: 'text-red-700 dark:text-red-200',
         };
       case 'Moderado':
         return {
-          container: 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-500 dark:border-yellow-500',
+          container: 'bg-white-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700',
           badge: 'bg-yellow-500 text-white',
           text: 'text-yellow-700 dark:text-yellow-200',
         };
       default:
         return {
-          container: 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700',
+          container: 'bg-white-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700',
           badge: 'bg-green-500 text-white',
-          text: 'text-slate-600 dark:text-slate-400',
+          text: 'text-green-700 dark:text-green-300',
         };
     }
   };
@@ -60,11 +62,11 @@ const SensorCard: React.FC<SensorCardProps> = ({ sensor, onSelect }) => {
       <div>
         {/* Cabecalho: Local e Badge */}
         <div className="flex justify-between items-center mb-2 gap-2">
-            <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate flex-1" title={location}>
+            <h3 className="font-medium text-sm text-slate-700 dark:text-slate-300 truncate flex-1" title={location}>
             {location}
             </h3>
             <div className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm uppercase tracking-wide ${styles.badge}`}>
-                {riskLevel === 'Nenhum' ? 'Normal' : riskLevel}
+                {alert ? riskLevel : 'Normal'}
             </div>
         </div>
 
@@ -72,7 +74,7 @@ const SensorCard: React.FC<SensorCardProps> = ({ sensor, onSelect }) => {
         <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-slate-700/50">
             <div className="flex items-center gap-1.5">
                 <ThermometerIcon className="w-5 h-5 text-slate-400 dark:text-slate-500" />
-                <span className="text-2xl font-bold text-slate-900 dark:text-white">{temp.toFixed(1)}°C</span>
+                <span className="text-lg font-semibold text-slate-800 dark:text-slate-200">{temp.toFixed(1)}°C</span>
             </div>
             <SpeakButton text={ttsText} label={`Ouvir dados de ${location}`} className="p-1.5 w-7 h-7 text-slate-400 hover:text-cyan-600 hover:bg-slate-100 dark:hover:bg-slate-700" />
         </div>
@@ -91,7 +93,7 @@ const SensorCard: React.FC<SensorCardProps> = ({ sensor, onSelect }) => {
       </div>
 
       {/* Alerta Compacto (Aparece so se houver risco) */}
-      {alert && riskLevel !== 'Nenhum' && (
+      {alert && (
         <div className={`mt-2 text-[10px] p-1.5 rounded border border-opacity-20 bg-opacity-10 ${styles.text} border-current leading-tight font-medium`}>
           {alert.message}
         </div>
