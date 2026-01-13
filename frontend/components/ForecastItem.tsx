@@ -1,5 +1,5 @@
 import React from 'react';
-import type { DailyForecast } from '../types.ts';
+import type { DailyForecast } from '../types';
 import { WeatherIcon, DropletIcon } from './Icons.tsx';
 
 interface ForecastItemProps {
