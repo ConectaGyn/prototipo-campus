@@ -1,6 +1,7 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { types } from 'util';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -16,7 +17,12 @@ export default defineConfig(({ mode }) => {
       },
       resolve: {
         alias: {
-          '@': path.resolve(__dirname, '.'),
+          '@': path.resolve(__dirname),
+          '@types': path.resolve(__dirname, 'types.ts'),
+          '@services': path.resolve(__dirname, 'services'),
+          '@domains': path.resolve(__dirname, 'domains'),
+          '@components': path.resolve(__dirname, 'components'),
+          '@utils': path.resolve(__dirname, 'utils'),
         }
       }
     };
