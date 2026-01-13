@@ -2,9 +2,9 @@
 import React, { useMemo } from 'react';
 import { PhoneIcon, ShieldAlertIcon, FlameIcon, ActivityIcon, SunIcon, CloudRainIcon, MapPinIcon, BuildingIcon, ChevronRightIcon, AlertTriangleIcon } from './Icons.tsx';
 import SpeakButton from './SpeakButton.tsx';
-import { calculateDistance, checkRouteRisk } from '../utils/geoUtils.ts';
+import { calculateDistance, checkRouteRisk } from '@utils/geoUtils';
 import type { SensorData } from '../types.ts';
-import { SAFE_LOCATIONS, type SafeLocation } from '../utils/safeLocations.ts';
+import { SAFE_LOCATIONS, type SafeLocation } from '@utils/safeLocations';
 
 interface SafetyInfoProps {
   userCoords: { lat: number; lon: number } | null;
