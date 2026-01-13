@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import type { RiskAlert } from '../types.ts';
-import { playRiskSound } from '../utils/soundUtils.ts';
+import { playRiskSound } from '@utils/soundUtils';
 import SpeakButton from './SpeakButton.tsx';
 import { useTTS } from '../hooks/useTTS.ts';
 
