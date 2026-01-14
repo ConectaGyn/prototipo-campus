@@ -2,10 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { XIcon, SlidersIcon, ShuffleIcon } from './Icons.tsx';
 import type { SimulationState, SimulationOverride, SimulationIntensity } from '../types.ts';
-import { sensorLocations } from '../services/sensorService.ts';
+import { sensorLocations } from '../domains/sensors/sensorService.ts';
 
 interface SimulationConfigModalProps {
-  isOpen: boolean;
+  isOpen: boolean; 
   onClose: () => void;
   currentConfig: SimulationState;
   onSave: (config: SimulationState) => void;
