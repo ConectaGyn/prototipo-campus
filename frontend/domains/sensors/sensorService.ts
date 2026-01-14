@@ -1,6 +1,28 @@
-import type { CurrentWeather, SensorData, SensorAlert, SensorLocationDef, SimulationOverride } from '../types.ts';
+import type {
+  CurrentWeather,
+  SensorData,
+  SensorAlert,
+  SensorLocationDef,
+  SimulationOverride
+} from '../../types.ts';
 
-export const sensorLocations: SensorLocationDef[] = [
+/**
+ * --------------------------------------------------
+ * MÓDULO DE SIMULAÇÃO (NÃO USAR EM PRODUÇÃO)
+ *
+ * Ele NÃO representa sensores reais.
+ * Ele NÃO é fonte oficial de pontos críticos.
+ *
+ * Os dados reais vêm do backend via /map/points.
+ *
+ * Este módulo existe para:
+ * - modo demo
+ * - modo simulação
+ * - fallback visual
+ * --------------------------------------------------
+ */
+
+export const simulatedSensorLocations: SensorLocationDef[] = [
   { id: 'marginal-botafogo-jamel-cecilio', name: 'Marginal Botafogo x Viaduto Jamel Cecilio', coords: { lat: -16.701694, lon: -49.244306 } },
   { id: 'marginal-botafogo-avenida-goias', name: 'Marginal Botafogo x Avenida Goias', coords: { lat: -16.653861, lon: -49.262556 } },
   { id: 'vila-redencao-nonato-mota', name: 'Vila Redencao - Rua Nonato Mota', coords: { lat: -16.717972, lon: -49.246167 } },
@@ -20,21 +42,26 @@ export const sensorLocations: SensorLocationDef[] = [
   { id: 'setor-norte-ferroviario-contorno', name: 'Regiao 44 Norte - Av. Contorno', coords: { lat: -16.657389, lon: -49.256389 } },
 ];
 
-const clamp = (num: number, min: number, max: number) => Math.min(Math.max(num, min), max);
+export const sensorLocations = simulatedSensorLocations;
+
+const clamp = (num: number, min: number, max: number) =>
+  Math.min(Math.max(num, min), max);
 
 /**
- * Calcula o nivel de risco para um unico sensor com base em seus dados.
+ * Calcula risco SIMULADO para um sensor
  */
-const calculateSensorRisk = (sensor: Omit<SensorData, 'id' | 'location' | 'alert' | 'coords'>): SensorAlert => {
+const calculateSensorRisk = (
+  sensor: Omit<SensorData, 'id' | 'location' | 'alert' | 'coords'>
+): SensorAlert => {
   const { temp, humidity, wind_speed } = sensor;
-  
+
   if (temp > 38 || wind_speed > 40) {
     return {
       level: 'Alto',
       message: 'Risco Alto: Temperatura muito alta ou ventos muito fortes.'
     };
   }
-  
+
   if (temp > 35 || humidity < 20 || wind_speed > 30) {
     return {
       level: 'Moderado',
@@ -46,10 +73,9 @@ const calculateSensorRisk = (sensor: Omit<SensorData, 'id' | 'location' | 'alert
 };
 
 /**
- * Gera dados simulados para uma rede de sensores.
- * @param baseWeather Os dados climaticos atuais da API para usar como base.
- * @param simulationEnabled Se a simulacao esta ligada globalmente.
- * @param overrides Mapa de sobrescritas por ID do sensor.
+ * Gera dados climáticos simuladossensores SIMULADOS
+ *
+ * Nunca deve ser usado como dado real
  */
 export const generateSimulatedSensorData = (
   baseWeather: CurrentWeather,
@@ -57,52 +83,53 @@ export const generateSimulatedSensorData = (
   overrides: Record<string, SimulationOverride>,
   sensorWeatherMap?: Record<string, CurrentWeather>
 ): SensorData[] => {
-  
+
   const now = Date.now();
 
-  return sensorLocations.map((location) => {
-    // Usa o clima real do sensor quando disponivel; caso contrario, usa o clima do usuario como base.
-    const baseForSensor = sensorWeatherMap?.[location.id] ?? baseWeather;
+  return sensorLocations.map(location => {
+    const baseForSensor =
+      sensorWeatherMap?.[location.id] ?? baseWeather;
+
     let sensorMetrics;
-    
-    // Verifica se existe uma regra de simulacao ativa para este sensor especifico
-    const override = simulationEnabled ? overrides[location.id] : null;
-    const isActiveOverride = override && override.endTime > now && override.intensity !== 'Normal';
+
+    const override =
+      simulationEnabled ? overrides[location.id] : null;
+
+    const isActiveOverride =
+      override &&
+      override.endTime > now &&
+      override.intensity !== 'Normal';
 
     if (isActiveOverride && override?.intensity === 'Alto') {
-      // Simula Risco Alto
       sensorMetrics = {
-        temp: parseFloat((39 + Math.random() * 2).toFixed(1)), // 39.0 a 41.0
+        temp: parseFloat((39 + Math.random() * 2).toFixed(1)),
         humidity: Math.round(15 + Math.random() * 10),
-        wind_speed: Math.round(45 + Math.random() * 15) // 45 a 60 km/h
+        wind_speed: Math.round(45 + Math.random() * 15)
       };
     } else if (isActiveOverride && override?.intensity === 'Moderado') {
-      // Simula Risco Moderado
       sensorMetrics = {
-        temp: parseFloat((36 + Math.random() * 1.5).toFixed(1)), // 36.0 a 37.5
+        temp: parseFloat((36 + Math.random() * 1.5).toFixed(1)),
         humidity: Math.round(20 + Math.random() * 5),
         wind_speed: Math.round(25 + Math.random() * 10)
       };
     } else {
-      // Comportamento Padrao (Sem risco ou simulacao expirada): Variacao aleatoria baseada no clima real
-      const tempVariation = (Math.random() - 0.5) * 3; // +/- 1.5 graus
-      const humidityVariation = (Math.random() - 0.5) * 10; // +/- 5%
-      const windVariation = (Math.random() - 0.5) * 10; // +/- 5 km/h
-
       sensorMetrics = {
-        temp: parseFloat((baseForSensor.temp + tempVariation).toFixed(1)),
-        humidity: Math.round(clamp(baseForSensor.humidity + humidityVariation, 0, 100)),
-        wind_speed: Math.round(Math.max(0, baseForSensor.wind_speed + windVariation)),
+        temp: parseFloat((baseForSensor.temp + (Math.random() - 0.5) * 3).toFixed(1)),
+        humidity: Math.round(
+          clamp(baseForSensor.humidity + (Math.random() - 0.5) * 10, 0, 100)
+        ),
+        wind_speed: Math.round(
+          Math.max(0, baseForSensor.wind_speed + (Math.random() - 0.5) * 10)
+        ),
       };
     }
 
-    let alert: SensorAlert | undefined;
-
-    // Calcula o risco com base nas metricas atuais (natural ou simulada).
     const calculatedAlert = calculateSensorRisk(sensorMetrics);
-    if (calculatedAlert.level != 'Nenhum') {
-      alert = calculatedAlert;
-    }
+    const alert =
+      calculatedAlert.level !== 'Nenhum'
+        ? calculatedAlert
+        : undefined;
+
     return {
       id: location.id,
       location: location.name,
