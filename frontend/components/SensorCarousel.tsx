@@ -24,7 +24,7 @@ const SensorCarousel: React.FC<SensorCarouselProps> = ({ sensors }) => {
 
   return (
     <section className="relative" aria-labelledby="sensors-list-title">
-      <h2 id="sensors-list-title" className="text-xl font-semibold mb-4 text-slate-600 dark:text-slate-300">Sensores na Cidade</h2>
+      <h2 id="sensors-list-title" className="text-xl font-medium mb-2 text-slate-500 dark:text-slate-400">Pontos Monitorados</h2>
       
       <button
         onClick={() => scroll('left')}
@@ -34,7 +34,7 @@ const SensorCarousel: React.FC<SensorCarouselProps> = ({ sensors }) => {
         <ChevronLeftIcon className="w-6 h-6 text-slate-700 dark:text-slate-200" aria-hidden="true" />
       </button>
 
-      <div ref={scrollContainerRef} className="flex overflow-x-auto space-x-3 sm:space-x-4 pb-4 scroll-smooth px-2" role="region" aria-label="Lista de cartões de sensores" tabIndex={0}>
+      <div ref={scrollContainerRef} className="flex overflow-x-auto space-x-2 sm:space-x-4 pb-2 scroll-smooth px-2" role="region" aria-label="Lista de cartões de sensores" tabIndex={0}>
         {/* Hide scrollbar */}
         <style>{`
           .overflow-x-auto::-webkit-scrollbar { 
@@ -46,7 +46,7 @@ const SensorCarousel: React.FC<SensorCarouselProps> = ({ sensors }) => {
           }
         `}</style>
         {sensors.map(sensor => (
-          <article key={sensor.id} className="flex-shrink-0 w-[78vw] sm:w-64">
+          <article key={sensor.id} className="flex-shrink-0 w-[65vw] sm:w-52">
             <SensorCard sensor={sensor} onSelect={setSelectedSensor} />
           </article>
         ))}
@@ -54,7 +54,7 @@ const SensorCarousel: React.FC<SensorCarouselProps> = ({ sensors }) => {
 
       <button
         onClick={() => scroll('right')}
-        className="absolute top-1/2 -translate-y-1/2 -right-4 bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-full p-2 shadow-lg hover:bg-white dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all z-10 opacity-75 hover:opacity-100 disabled:opacity-25"
+        className="absolute top-1/2 -translate-y-1/2 -right-4 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-full p-2 shadow-md hover:bg-white dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all z-10 opacity-75 hover:opacity-100 disabled:opacity-25"
         aria-label="Rolar lista de sensores para a direita"
       >
         <ChevronRightIcon className="w-6 h-6 text-slate-700 dark:text-slate-200" aria-hidden="true" />
@@ -62,7 +62,7 @@ const SensorCarousel: React.FC<SensorCarouselProps> = ({ sensors }) => {
 
       {selectedSensor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-lg w-full p-5 sm:p-6 relative border border-slate-200 dark:border-slate-700 max-h-[85vh] overflow-y-auto">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full p-4 sm:p-5 relative border border-slate-200 dark:border-slate-700 max-h-[85vh] overflow-y-auto">
             <button
               onClick={() => setSelectedSensor(null)}
               className="absolute top-4 right-4 p-2 rounded-full text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-700"
@@ -73,7 +73,7 @@ const SensorCarousel: React.FC<SensorCarouselProps> = ({ sensors }) => {
             <div className="flex items-center gap-3 mb-4">
               <MapPinIcon className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
               <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Sensor</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Ponto Monitorado</p>
                 <h3 className="text-xl font-bold text-slate-800 dark:text-white">{selectedSensor.location}</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Lat {selectedSensor.coords.lat.toFixed(4)} | Lon {selectedSensor.coords.lon.toFixed(4)}</p>
               </div>
@@ -101,18 +101,18 @@ const SensorCarousel: React.FC<SensorCarouselProps> = ({ sensors }) => {
                 </div>
               </div>
             </div>
-            <div className={`p-3 rounded-xl border flex items-center gap-3 mb-4 ${selectedSensor.alert ? 'border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-900/30' : 'border-green-200 bg-green-50 dark:border-green-700 dark:bg-green-900/30'}`}>
+            <div className={`p-3 rounded-xl border flex items-center gap-3 mb-4 ${selectedSensor.alert ? 'border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-900/30' : 'border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/30'}`}>
               {selectedSensor.alert ? (
                 <AlertTriangleIcon className="w-6 h-6 text-amber-500" />
               ) : (
-                <CheckCircleIcon className="w-6 h-6 text-green-500" />
+                <CheckCircleIcon className="w-6 h-6 text-slate-500" />
               )}
               <div>
                 <p className="text-sm font-semibold text-slate-800 dark:text-white">
-                  {selectedSensor.alert ? `Risco ${selectedSensor.alert.level}` : 'Sem risco'}
+                  {selectedSensor.alert ? `Risco ${selectedSensor.alert.level}` : 'Sem risco Identificado'}
                 </p>
                 <p className="text-xs text-slate-600 dark:text-slate-300">
-                  {selectedSensor.alert ? selectedSensor.alert.message : 'Condições estáveis no momento.'}
+                  {selectedSensor.alert ? selectedSensor.alert.message : 'Condições climáticas dentro da normalidade'}
                 </p>
               </div>
             </div>
