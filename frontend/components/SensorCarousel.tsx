@@ -83,21 +83,21 @@ const SensorCarousel: React.FC<SensorCarouselProps> = ({ sensors }) => {
                 <ThermometerIcon className="w-5 h-5 text-red-500" />
                 <div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">Temperatura</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">{selectedSensor.temp.toFixed(1)}°C</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">{typeof selectedSensor.temp === 'number' ? `${selectedSensor.temp.toFixed(1)}°C` : '--'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                 <DropletIcon className="w-5 h-5 text-cyan-500" />
                 <div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">Umidade</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">{Math.round(selectedSensor.humidity)}%</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">{typeof selectedSensor.humidity === 'number' ? `${selectedSensor.humidity}%` : '--'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                 <WindIcon className="w-5 h-5 text-slate-500" />
                 <div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">Vento</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">{Math.round(selectedSensor.wind_speed)} km/h</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">{typeof selectedSensor.wind_speed === 'number' ? `${Math.round(selectedSensor.wind_speed)} km/h` : '--'}</p>
                 </div>
               </div>
             </div>
