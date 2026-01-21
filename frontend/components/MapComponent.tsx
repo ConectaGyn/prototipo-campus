@@ -32,19 +32,19 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
   const markersRef = useRef<any[]>([]); // Para guardar as instancias dos marcadores de sensores
   const userMarkerRef = useRef<any>(null); // Para guardar a instancia do marcador do usuario
   const tempMarkerRef = useRef<any>(null); // Para guardar o marcador temporario de 
-  const criticalMarkersRef = useRef<any[]>([]);
 
   // Helper para criar icones circulares (Bolinhas)
   const getMarkerIcon = (level: string) => {
-    let colorClass = 'bg-green-500';
+    let colorClass = 'bg-slate-400';
     let pulseHtml = '';
 
     if (level === 'Alto') {
       colorClass = 'bg-red-600';
-      // Animacao de pulso para risco alto
       pulseHtml = '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>';
     } else if (level === 'Moderado') {
       colorClass = 'bg-yellow-500';
+    } else if (level === 'Baixo') {
+      colorClass = 'bg-green-500';
     }
 
     const html = `
@@ -243,7 +243,14 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
     markersRef.current = [];
 
     sensors.forEach(sensor => {
-      const riskLevel = sensor.alert?.level || 'Nenhum';
+      const rawLevel = sensor.alert?.level;
+
+      const riskLevel =
+        rawLevel === 'Alto' || rawLevel === 'Moderado' || rawLevel === 'Baixo'
+          ? rawLevel
+          : rawLevel === 'Muito Alto'
+            ? 'Alto' 
+            : 'Nenhum';
       
       const popupContent = `
         <div class="font-sans p-2 min-w-[180px]">
@@ -252,9 +259,9 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
           </h3>
 
           <div class="space-y-1 text-sm text-slate-700">
-            <div class="flex justify-between"><span>Temperatura:</span><span class="font-semibold">${sensor.temp.toFixed(1)}°C</span></div>
-            <div class="flex justify-between"><span>Umidade:</span><span class="font-semibold">${Math.round(sensor.humidity)}%</span></div>
-            <div class="flex justify-between"><span>Vento:</span><span class="font-semibold">${Math.round(sensor.wind_speed)} km/h</span></div>
+            <div class="flex justify-between"><span>Temperatura:</span><span class="font-semibold">${sensor.temp !== undefined ? sensor.temp.toFixed(1) + '°C' : '--'}</span></div>
+            <div class="flex justify-between"><span>Umidade:</span><span class="font-semibold">${typeof sensor.humidity === 'number' ? `${Math.round(sensor.humidity)}%` : '--'}</span></div>
+            <div class="flex justify-between"><span>Vento:</span><span class="font-semibold">${typeof sensor.wind_speed === 'number' ? `${Math.round(sensor.wind_speed)} km/h` : '--'}</span></div>
           </div>
 
           <div class="mt-3 pt-2 border-t text-center font-bold ${
@@ -264,7 +271,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
                 ? 'text-yellow-600'
                 : 'text-green-600'
           }">
-            ${riskLevel !== 'Nenhum' ? `Risco ${riskLevel}` : 'Sem risco'}
+            ${riskLevel !== 'Nenhum' ? `Risco ${riskLevel}` : 'Risco não Identificado'}
           </div>
 
           <div class="mt-2 text-xs text-slate-400 text-center italic">
