@@ -7,8 +7,6 @@
 // Estes tipos NÃO contêm lógica de UI.
 // São contratos de dados entre Backend ↔ Frontend.
 
-import { RiskLevel } from "@/types";
-
 
 // ===============================
 // LOCALIZAÇÃO GEOGRÁFICA
@@ -41,30 +39,12 @@ export interface CriticalPoint {
 // RISCO (STATUS ATUAL)
 // ===============================
 
-export type RiskCategory = 'Baixo' | 'Moderado' | 'Alto' | 'Muito Alto';
+export type RiskLevel = 'Baixo' | 'Moderado' | 'Alto' | 'Muito Alto';
 
 export interface RiskStatus {
-  /**
-   * Índice Composto de Risco de Alagamento (0 a 1)
-   */
   icra: number;
-
-  /**
-   * Classificação qualitativa do risco
-   * Ex: "Baixo", "Moderado", "Alto", "Muito Alto"
-   */
   nivel: RiskLevel;
-
-  /**
-   * Nível de confiança da previsão
-   * Ex: "Alta", "Média", "Baixa"
-   */
-  confianca: string;
-
-  /**
-   * Cor associada ao risco para uso no mapa
-   * Ex: "verde", "amarelo", "vermelho"
-   */
+  confianca: "Alta" | "Média" | "Baixa" | string;
   cor: string;
 }
 
@@ -74,17 +54,14 @@ export interface RiskStatus {
 // ===============================
     
 export interface MapPoint {
-  /**
-   * Dados do ponto crítico
-   */
   ponto: CriticalPoint;
 
   /**
    * Estado de risco atual.
    * Pode ser null quando:
    * - A IA está indisponível
-   * - O risco ainda não foi calculado
-   * - Estamos em modo de validação
+   * - Erro de inferência
+   * - Ambiente de Validação
    */
   risco_atual: RiskStatus | null;
 }
@@ -95,13 +72,6 @@ export interface MapPoint {
 // ===============================
 
 export interface MapPointsResponse {
-  /**
-   * Lista de pontos críticos prontos para renderização no mapa
-   */
   pontos: MapPoint[];
-
-  /**
-   * Timestamp ISO da última atualização
-   */
   atualizado_em: string;
 }
