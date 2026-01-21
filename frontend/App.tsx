@@ -134,51 +134,68 @@ const App: React.FC = () => {
   }, [fetchWeatherAndLocation]);
 
   useEffect(() => {
-    if (!displayedCurrentWeather) return;
 
     const fetchCriticalPoints = async () => {
       try {const response = await getMapPoints();
 
-        const converted: SensorData[] = response.pontos.map(item => ({
-          id: item.ponto.id,
-          location: item.ponto.nome,
-          coords: {
-            lat: item.ponto.localizacao.latitude,
-            lon: item.ponto.localizacao.longitude,
-          },
+        const converted: SensorData[] = await Promise.all(
+          response.pontos.map(async (item) => {
+            const lat = item.ponto.localizacao.latitude;
+            const lon = item.ponto.localizacao.longitude;
 
-          temp: displayedCurrentWeather.temp,
-          humidity: displayedCurrentWeather.humidity,
-          wind_speed: displayedCurrentWeather.wind_speed,
-          feels_like: displayedCurrentWeather.feels_like,
-          pressure: displayedCurrentWeather.pressure,
-          rain: displayedCurrentWeather.rain ?? null,
+            let weather: CurrentWeather | null = null; 
 
+            try {
+              const weatherData = await getWeatherData(lat, lon);
+              weather = weatherData.current;
+            } catch {
+              weather = null;
+            }
+
+            return {
+              id: item.ponto.id,
+              location: item.ponto.nome,
+              coords: { lat, lon },
+              temp: weather?.temp,
+              humidity: weather?.humidity,
+              wind_speed: weather?.wind_speed,
+              feels_like: weather?.feels_like,
+              pressure: weather?.pressure,
+              rain: weather?.rain,
     
-          alert: item.risco_atual
-            ? {
-                level: item.risco_atual.nivel,
-                message: `Risco ${item.risco_atual.nivel} identificado.`,
-                color: item.risco_atual.cor,
-              }
-            : undefined,
-        }));
+              alert: item.risco_atual
+                ? {
+                    level: item.risco_atual.nivel,
+                    message: `Risco ${item.risco_atual.nivel} identificado.`,
+                    color: item.risco_atual.cor,
+                  }
+                : {
+                    level: 'Nenhum',
+                    message: 'Nenhum risco identificado.',
+                    color: 'bg-slate-400'
+                  },
+            };
+          })
+        );
          
         console.log('Pontos críticos recebidos:', response.pontos);
         console.log('Sensores convertidos:', converted);
 
         setMapSensors(converted);
 
+        const veryHigh = converted.filter(s => s.alert?.level === 'Muito Alto'); 
         const high = converted.filter(s => s.alert?.level === 'Alto');
         const moderate = converted.filter(s => s.alert?.level === 'Moderado');
 
-        if (high.length || moderate.length) {
+        if (veryHigh.length || high.length || moderate.length) {
           setRiskAlert({
-            level: high.length ? 'Alto' : 'Moderado',
-            message: high.length
-              ? `Risco Alto em ${high.map(s => s.location).join(', ')}`
-              : `Risco Moderado em ${moderate.map(s => s.location).join(', ')}`,
-            color: high.length ? 'bg-red-500' : 'bg-yellow-500',
+            level: veryHigh.length ? 'Muito Alto' : high.length ? 'Alto' : 'Moderado',
+            message: veryHigh.length
+              ? `Risco Muito Alto em ${veryHigh.map(s => s.location).join(', ')}`
+              : high.length
+                ? `Risco Alto em ${high.map(s => s.location).join(', ')}`
+                : `Risco Moderado em ${moderate.map(s => s.location).join(', ')}`,
+            color: veryHigh.length ? 'bg-red-700' : high.length ? 'bg-red-500' : 'bg-yellow-500',
             icon: <AlertTriangleIcon className="w-8 h-8 text-white" />,
           });
         } else {
