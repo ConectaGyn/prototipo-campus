@@ -21,20 +21,39 @@ const MAP_POINTS_ENDPOINT = "/map/points";
  * @returns Lista de pontos críticos com risco (ou risco nulo)
  */
 export async function getMapPoints(): Promise<MapPointsResponse> {
-  const response = await fetch(`${BASE_URL}${MAP_POINTS_ENDPOINT}`, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  })
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000); // 15 segundos
 
-  if (!response.ok) {
-    throw new Error(
-      `Erro ao buscar pontos do mapa: ${response.status} ${response.statusText}`
-    );
-  }
+  let response: Response;
+
+  try {
+    response = await fetch(`${BASE_URL}${MAP_POINTS_ENDPOINT}`, {
+      method: 'GET',
+      headers: {
+        "Content-Type": "application/json",
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Erro ao buscar pontos do mapa: ${response.status} ${response.statusText}`
+      );
+    }
 
   const data: MapPointsResponse = await response.json();
 
+  if (!data.pontos || !Array.isArray(data.pontos)) {
+    throw new Error("Resposta inválida do servidor: 'pontos' ausente ou inválido.");
+  }
+
+  if (import.meta.env.DEV) {
+    console.debug("[map.service] Pontos do mapa recebidos:", data.pontos);
+  }
+
   return data;
+} finally {
+    clearTimeout(timeout);
+ }
+
 }
