@@ -9,11 +9,13 @@
 
 import type { ReactElement } from 'react';
 
-export type SensorRiskLevel = 'Baixo' | 'Moderado' | 'Alto' | 'Nenhum';
+export type SensorRiskLevel = 'Baixo' | 'Moderado' | 'Alto' |'Muito Alto' | 'Nenhum';
 
 export interface SensorAlert {
   level: SensorRiskLevel;
-  message: string;
+  icra?: number;
+  message?: string;
+  confianca?: string;
   color?: string;
   icon?: ReactElement;
 }
