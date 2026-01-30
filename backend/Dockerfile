@@ -1,14 +1,16 @@
 FROM python:3.10-slim
 
-WORKDIR /app
+WORKDIR /src
 
-# Instala dependências do sistema se necessário
-RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/lists/*
-
+# Instala dependências
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copia o código para DENTRO de uma pasta 'backend'
+COPY . ./backend
 
-# Expõe a porta (ajuste se seu app.main rodar em outra porta, padrão uvicorn é 8000)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Avisa o Python para procurar módulos na pasta /src
+ENV PYTHONPATH=/src
+
+# Inicia usando o caminho completo do módulo
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
