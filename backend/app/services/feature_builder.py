@@ -97,23 +97,21 @@ class FeatureBuilder:
             # ==========================
             # BASE DIRETA
             # ==========================
-            features["precipitacao_total_mm"] = climate_today["precipitacao_total_mm"]
-            features["temperatura_media_2m_C"] = climate_today["temperatura_media_2m_C"]
-            features["temperatura_aparente_media_2m_C"] = climate_today[
-                "temperatura_aparente_media_2m_C"
-            ]
-
+            features["precipitacao_total_mm"] = float(climate_today.get("precipitacao_total_mm", 0.0))
+            features["temperatura_media_2m_C"] = float(climate_today.get("temperatura_media_2m_C", 0.0))
+            features["temperatura_aparente_media_2m_C"] = float(climate_today.get("temperatura_aparente_media_2m_C", 0.0))
+           
             # ==========================
             # MÉDIAS MÓVEIS
             # ==========================
-            precip_series = climate_history["precipitacao_total_mm"]
+            precip_series = climate_history.get("precipitacao_total_mm", [])
 
-            features["precipitacao_ma_7d"] = self.safe_mean(
+            features["precipitacao_ma_7d"] = self._safe_mean(
                 precip_series, 7)
-            features["precipitacao_ma_30d"] = self.safe_mean(
+            features["precipitacao_ma_30d"] = self._safe_mean(
                 precip_series, 30
             )
-            features["precipitacao_ma_90d"] = self.safe_mean(
+            features["precipitacao_ma_90d"] = self._safe_mean(
                 precip_series, 90
             )
 
@@ -132,9 +130,14 @@ class FeatureBuilder:
             # ==========================
             # INTENSIDADE
             # ==========================
-            features["intensidade_precipitacao"] = (
-                features["precipitacao_total_mm"] / max(1.0, 24.0)
-            )
+            denominador = features["precipitacao_ma_7d"]
+
+            if denominador <= 0.1:
+                features["intensidade_precipitacao"] = 0.0
+            else:
+                features["intensidade_precipitacao"] = (
+                    features["precipitacao_total_mm"] / denominador
+                )
 
             # ==========================
             # LAGS DE PRECIPITAÇÃO
@@ -149,7 +152,7 @@ class FeatureBuilder:
             # ==========================
             # LAGS DE TEMPERATURA
             # ==========================
-            temp_serie = climate_history["temperatura_media_2m_C"]
+            temp_serie = climate_history.get("temperatura_media_2m_C", [])
 
             features["temperatura_lag_1d"] = self._safe_lag(temp_serie, 1)
             features["temperatura_lag_7d"] = self._safe_lag(temp_serie, 7)
@@ -167,7 +170,7 @@ class FeatureBuilder:
             return features
 
         except Exception as e:
-            raise FeatureBuilderError(f"Erro ao construir features: {e}")
+            raise FeatureBuilderError(f"Erro ao construir features: (data={target_date}): {e}")
 
     # -------------------------------------------------
     # HELPERS
@@ -187,12 +190,12 @@ class FeatureBuilder:
             return sum(series) / len(series)
         return sum(series[-window:]) / window
 
-    def _safe_lag(self, series: List[float], window: int) -> float:
+    def _safe_lag(self, series: List[float], lag: int) -> float:
         if not series:
             return 0.0
-        if len(series) < window:
-            return sum(series) / len(series)
-        return sum(series[-window:]) / window
+        if len(series) < lag:
+            return series[0]
+        return series[-lag]
 
     def _seasonal_components(self, d: date) -> Dict[str, float]:
         """
@@ -217,5 +220,5 @@ class FeatureBuilder:
         missing = [f for f in FEATURE_ORDER if f not in features]
         if missing:
             raise FeatureBuilderError(
-                f"Features ausentes após construção: {missing}"
+                f"Features faltando: {', '.join(missing)}"
             )
