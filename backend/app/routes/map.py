@@ -31,12 +31,14 @@ risk_orchestrator = RiskOrchestrator()
     status_code=status.HTTP_200_OK,
     summary="Pontos críticos com risco para visualização em mapa",
     description=(
-        "Retorna todos os pontos críticos monitorados, "
-        "já enriquecidos com o risco climático atual, "
-        "prontos para renderização no mapa."
+        "Retorna os pontos críticos monitorados, para exibição no mapa."
+        "Por padrão, inclui o risco climático estimado pelo modelo ICRA."
+        "pode operar em modo sem risco para carregamento rápido de localização."
     ),
 )
-def get_map_points():
+def get_map_points(
+    with_risk: bool = True,
+):
     """
     Endpoint principal de integração com o frontend de mapa.
 
@@ -52,13 +54,31 @@ def get_map_points():
         map_points: List[MapPointSchema] = []
         
         for point in points:
-            try:
-                point_with_risk = risk_orchestrator.evaluate_point_risk(
-                    point=point,
-                    target_date=target_date,
-                )
-            
-            except Exception as err:
+            if with_risk:
+                try:
+                    point_with_risk = risk_orchestrator.evaluate_point_risk(
+                        point=point,
+                        target_date=target_date,
+                    )
+                    
+                except Exception as err:
+                    print(f"[Map][RISK ERROR] Ponto {point.nome} ({point.id}): {err}")
+                    point_with_risk = MapPointSchema(
+                        ponto=PointResponse(
+                            id=point.id,
+                            nome=point.nome,
+                            localizacao={
+                                "latitude": point.localizacao.latitude,
+                                "longitude": point.localizacao.longitude,
+                            },
+                            ativo=point.ativo,
+                            raio_influencia_m=point.raio_influencia_m,
+                            bairro=point.bairro or None,
+                            descricao=point.descricao or None,
+                        ),
+                        risco_atual=None,
+                    )
+            else:
                 point_with_risk = MapPointSchema(
                     ponto=PointResponse(
                         id=point.id,
