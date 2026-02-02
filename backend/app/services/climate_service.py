@@ -42,6 +42,7 @@ class ClimateService:
     def __init__(self):
         self.primary_provider = settings.CLIMATE.PRIMARY_PROVIDER
         self.daily_cache: dict = {}
+        self._max_cache_size = 1000
 
     # -------------------------------------------------
     # API PÚBLICA
@@ -118,7 +119,9 @@ class ClimateService:
                 "end_date": target_date.isoformat(),
             }
 
-            response = requests.get(url, params=params, timeout=20)
+            timeout = getattr(settings.CLIMATE, "TIMEOUT", 15)
+
+            response = requests.get(url, params=params, timeout=timeout)
             response.raise_for_status()
 
             data = response.json()
@@ -131,10 +134,14 @@ class ClimateService:
                 ][0],
             }
 
+            if len(self.daily_cache) >= self._max_cache_size:
+                self.daily_cache.clear()
+
             self.daily_cache[cache_key] = result
             return result
 
         except Exception as e:
+            print(f"[CLIMATE][ERRO] {latitude}, {longitude} ({target_date}): {e}")
             return {
                 "precipitacao_total_mm": 0.0,
                 "temperatura_media_2m_C": 0.0,
@@ -168,7 +175,9 @@ class ClimateService:
                 "end_date": target_date.isoformat(),
             }
 
-            response = requests.get(url, params=params, timeout=10)
+            timeout = getattr(settings.CLIMATE, "TIMEOUT", 15)
+
+            response = requests.get(url, params=params, timeout=timeout)
             response.raise_for_status()
 
             data = response.json()
