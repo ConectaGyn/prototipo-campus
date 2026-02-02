@@ -4,9 +4,6 @@ import type { SensorData } from '../types.ts';
 import { getWeatherData, getLocationName } from '../services/weather/openWeather.service.ts';
 import { useState } from 'react';
 
-
-// Declara o objeto L do Leaflet para o TypeScript para evitar erros,
-// ja que ele e carregado globalmente a partir de um script.
 declare const L: any;
 
 type RouteStopType = 'start' | 'via' | 'destination';
@@ -45,6 +42,8 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
       colorClass = 'bg-yellow-500';
     } else if (level === 'Baixo') {
       colorClass = 'bg-green-500';
+    } else if (level === 'Indefinido' || level === 'Nenhum') {
+      colorClass = 'bg-slate-500';
     }
 
     const html = `
@@ -160,136 +159,73 @@ const MapComponent: React.FC<MapComponentProps> = ({ sensors, className, userLoc
       
       mapRef.current.keyboard.disable();
 
-      // Adiciona ouvinte de clique no mapa
-      mapRef.current.on('click', async (e: any) => {
-        const { lat, lng } = e.latlng;
-
-        // Remove marcador temporario anterior, se existir
-        if (tempMarkerRef.current) {
-          tempMarkerRef.current.remove();
-          tempMarkerRef.current = null;
-        }
-
-        // Conteudo de carregamento
-        const loadingContent = `
-          <div class="flex items-center gap-2 p-2 font-sans">
-             <div class="w-4 h-4 border-2 border-cyan-600 border-t-transparent rounded-full animate-spin"></div>
-             <span class="text-sm text-slate-600 font-semibold">Buscando dados...</span>
-          </div>
-        `;
-
-        // Cria o marcador no local clicado
-        const marker = L.marker([lat, lng], {
-            icon: getTempIcon(),
-            zIndexOffset: 500
-        }).addTo(mapRef.current)
-          .bindPopup(loadingContent)
-          .openPopup();
-
-        // Adiciona evento para remover o marcador quando o popup fechar
-        // Isso acontece ao clicar no 'X' ou clicar no fundo do mapa
-        marker.on('popupclose', () => {
-           marker.remove();
-           if (tempMarkerRef.current === marker) {
-               tempMarkerRef.current = null;
-           }
-        });
-
-        tempMarkerRef.current = marker;
-
-        try {
-             // Busca dados reais da API para o ponto clicado
-            const [weatherData, locName] = await Promise.all([
-                getWeatherData(lat, lng),
-                getLocationName(lat, lng)
-            ]);
-
-            const weather = weatherData.current;
-            
-            const popupContent = `
-                <div class="font-sans p-1 min-w-[160px]">
-                  <h3 class="font-bold text-base text-slate-900 border-b pb-1 mb-2">${locName}</h3>
-                  <div class="space-y-1 text-sm text-slate-700">
-                    <div class="flex items-center gap-2 mb-2">
-                        <img src="https://openweathermap.org/img/wn/${weather.weather[0].icon}.png" alt="${weather.weather[0].description}" class="w-8 h-8 -my-2" />
-                        <span class="capitalize font-semibold text-cyan-700">${weather.weather[0].description}</span>
-                    </div>
-                    <div class="flex justify-between"><span>Temperatura:</span> <span class="font-semibold text-slate-800">${weather.temp.toFixed(1)}C</span></div>
-                    <div class="flex justify-between"><span>Sensacao:</span> <span class="font-semibold">${weather.feels_like.toFixed(1)}C</span></div>
-                    <div class="flex justify-between"><span>Umidade:</span> <span class="font-semibold">${weather.humidity}%</span></div>
-                    <div class="flex justify-between"><span>Vento:</span> <span class="font-semibold">${Math.round(weather.wind_speed)} km/h</span></div>
-                  </div>
-                  <div class="mt-2 pt-1 text-xs text-slate-400 text-center italic">
-                    Dados em tempo real
-                  </div>
-                </div>
-            `;
-
-            marker.setPopupContent(popupContent);
-
-        } catch (error) {
-            console.error("Erro ao buscar dados do ponto:", error);
-            marker.setPopupContent(`
-                <div class="p-2 font-sans text-sm text-red-600 font-bold">
-                   Nao foi possivel carregar os dados deste local.
-                </div>
-            `);
-        }
-      });
-    }
-    
-    // --- Gerenciamento de Marcadores de Sensores ---
     markersRef.current.forEach(marker => marker.remove());
     markersRef.current = [];
 
-    sensors.forEach(sensor => {
-      const rawLevel = sensor.alert?.level;
+      sensors.forEach(sensor => {
+        const marker = L.marker([sensor.coords.lat, sensor.coords.lon], {
+          icon: getMarkerIcon('Nenhum'),
+          zIndexOffset: 800,
+        }).addTo(mapRef.current);
 
-      const riskLevel =
-        rawLevel === 'Alto' || rawLevel === 'Moderado' || rawLevel === 'Baixo'
-          ? rawLevel
-          : rawLevel === 'Muito Alto'
-            ? 'Alto' 
-            : 'Nenhum';
-      
-      const popupContent = `
-        <div class="font-sans p-2 min-w-[180px]">
-          <h3 class="font-bold text-base text-slate-900 border-b pb-1 mb-2">
-            ${sensor.location}
-          </h3>
-
-          <div class="space-y-1 text-sm text-slate-700">
-            <div class="flex justify-between"><span>Temperatura:</span><span class="font-semibold">${sensor.temp !== undefined ? sensor.temp.toFixed(1) + '°C' : '--'}</span></div>
-            <div class="flex justify-between"><span>Umidade:</span><span class="font-semibold">${typeof sensor.humidity === 'number' ? `${Math.round(sensor.humidity)}%` : '--'}</span></div>
-            <div class="flex justify-between"><span>Vento:</span><span class="font-semibold">${typeof sensor.wind_speed === 'number' ? `${Math.round(sensor.wind_speed)} km/h` : '--'}</span></div>
+        const initialPopup = `
+          <div class="font-sans p-2 min-w-[180px]">
+            <h3 class="font-bold text-base text-slate-900 border-b pb-1 mb-2">
+              ${sensor.location}
+            </h3>
+            <div class="text-sm text-slate-600 text-center italic">
+            Clique para avaliar o risco neste ponto
+            </div>
           </div>
-
-          <div class="mt-3 pt-2 border-t text-center font-bold ${
-            riskLevel === 'Alto'
-              ? 'text-red-600'
-              : riskLevel === 'Moderado'
-                ? 'text-yellow-600'
-                : 'text-green-600'
-          }">
-            ${riskLevel !== 'Nenhum' ? `Risco ${riskLevel}` : 'Risco não Identificado'}
-          </div>
-
-          <div class="mt-2 text-xs text-slate-400 text-center italic">
-            Ponto crítico monitorado
-          </div>
-        </div>
-     `;
-      
-      const marker = L.marker([sensor.coords.lat, sensor.coords.lon], {
-        icon: getMarkerIcon(riskLevel),
-        title: `Ponto critico: ${sensor.location}`,
-        zIndexOffset: 800,
-      })
-        .addTo(mapRef.current)
-        .bindPopup(popupContent);
+        `;
         
-      markersRef.current.push(marker);
-    });
+        marker.bindPopup(initialPopup);
+
+        marker.on('click', async () => {
+          marker.setPopupContent(`
+            <div class="flex items-center gap-2 p-2">
+              <div class="w-4 h-4 border-2 border-cyan-600 border-t-transparent rounded-full animate-spin"></div>
+              <span class="text-sm font-semibold text-slate-600">Calculando risco...</span>
+            </div>
+          `);
+
+          try {
+            const response = await fetch(
+              `${import.meta.env.VITE_API_BASE_URL}/points/${sensor.id}/risk`
+            );
+
+            if (!response.ok) throw new Error('Falha ao calcular risco');
+
+            const risk = await response.json();
+
+            marker.setIcon(getMarkerIcon(risk.nivel));
+
+            marker.setPopupContent(`
+              <div class="font-sans p-2 min-w-[180px]">
+                <h3 class="font-bold text-base text-slate-900 border-b pb-1 mb-2">
+                  ${sensor.location}
+                </h3>
+                <div class="text-center font-bold text-${risk.cor}">
+                  Risco ${risk.nivel}
+                </div>
+                <div class="mt-1 text-xs text-slate-500 text-center">
+                  Confiança: ${risk.confianca}
+                </div>
+              </div>
+            `);
+          } catch (e) {
+            marker.setPopupContent(`
+              <div class="p-2 text-sm text-red-600 fonto-bold">
+                Não foi possível calcular o risco.
+              </div>
+            `);
+          }
+        });
+
+        markersRef.current.push(marker);
+      });
+
+    }
 
     // --- Gerenciamento do Marcador do Usuario ---
     if (userMarkerRef.current) {
