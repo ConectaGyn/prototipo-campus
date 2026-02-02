@@ -14,7 +14,7 @@ import requests
 from backend.app.settings import settings
 from backend.app.models.point import CriticalPoint, GeoLocation
 from backend.app.services.climate_service import ClimateService
-from backend.app.services.feature_builder import FeatureBuilder
+from backend.app.services.feature_builder import FeatureBuilder , FEATURE_ORDER
 from backend.app.schemas.map import MapPointSchema, RiskStatusSchema
 from backend.app.schemas.point import PointResponse
 
@@ -89,31 +89,75 @@ class RiskOrchestrator:
             self._points_cache = self._load_points_from_csv()
         return self._points_cache
     
-    def get_points_for_map(self) -> List[MapPointSchema]:
+    def get_point_by_id(self, point_id: str) -> CriticalPoint:
         """
-        Retorna pontos prontos para mapa, sem cálculo de risco.
+        Retorna um ponto crítico pelo ID (ex: p1, p2, ...)
+        Usado pelo endpoint /map/points/{id}/risk
         """
         points = self.get_all_points()
+        for p in points:
+            if p.id == point_id:
+                return p
+        raise RiskOrchestrationError(f"Ponto não encontrado: {point_id}")
+    
+    def get_points_for_map(self, with_risk: bool = True) -> List[MapPointSchema]:
+        """
+        Retorna pontos para o mapa
+        - with_risk=True: Calcula risco via IA 
+        - with_risk=False: Retorna apenas os pontos com risco_atual=None
+        """
+        points = self.get_all_points()
+        today = date.today()
 
-        result = []
+        result: List[MapPointSchema] = []
+
         for point in points:
-            result.append(
-            MapPointSchema(
-                ponto=PointResponse(
-                    id=point.id,
-                    nome=point.nome,
-                    localizacao={
-                        "latitude": point.localizacao.latitude,
-                        "longitude": point.localizacao.longitude,
-                    },
-                    ativo=point.ativo,
-                    raio_influencia_m=point.raio_influencia_m,
-                    bairro=point.bairro,
-                    descricao=point.descricao,
-                ),
-                risco_atual=None,
-            )
-        )
+            if not with_risk:
+                result.append(
+                    MapPointSchema(
+                        ponto=PointResponse(
+                            id=point.id,
+                            nome=point.nome,
+                            localizacao={
+                                "latitude": point.localizacao.latitude,
+                                "longitude": point.localizacao.longitude,
+                            },
+                            ativo=point.ativo,
+                            raio_influencia_m=point.raio_influencia_m,
+                            bairro=point.bairro,
+                            descricao=point.descricao,
+                        ),
+                        risco_atual=None,
+                    )
+                )
+                continue
+            
+            try:
+                point_with_risk = self.evaluate_point_risk(
+                    point=point,
+                    target_date=today,
+                    with_history=True,
+                )
+                result.append(point_with_risk)
+            
+            except Exception:
+                result.append(
+                    MapPointSchema(
+                        ponto=PointResponse(
+                            id=point.id,
+                            nome=point.nome,
+                            localizacao={
+                                "latitude": point.localizacao.latitude,
+                                "longitude": point.localizacao.longitude,
+                            },
+                            ativo=point.ativo,
+                            raio_influencia_m=point.raio_influencia_m,
+                            bairro=point.bairro,
+                            descricao=point.descricao,
+                        ),
+                        risco_atual=None,
+                    )
+                )
 
         return result
 
@@ -139,7 +183,7 @@ class RiskOrchestrator:
                 target_date=target_date,
             )
 
-            HISTORY_DAYS = 30
+            HISTORY_DAYS = 90
 
             precip_series: List[float] = []
             temp_series: List[float] = []
@@ -167,20 +211,13 @@ class RiskOrchestrator:
                 target_date=target_date,
             )
 
-            try:
-                icra_result = self._call_icra_api(
-                    features=features,
-                    target_date=target_date,
-                    point_id=point.id,
-            )
-
-            except Exception:
-                icra_result = {
-                    "icra": -1.0,
-                    "nivel_risco": "Indisponível",
-                    "confianca": "Baixa",
-                    "cor": "cinza",
-                }
+            features = {k: features.get(k, 0.0) for k in FEATURE_ORDER}
+            
+            icra_result = self._call_icra_api(
+                features=features,
+                target_date=target_date,
+                point_id=point.id,
+                )
 
             point_schema = PointResponse(
                 id=point.id,
@@ -197,9 +234,9 @@ class RiskOrchestrator:
 
             risk_schema = RiskStatusSchema(
                 icra=icra_result["icra"],
-                nivel=icra_result["nivel_risco"],
-                confianca=icra_result["confianca"],
-                cor=icra_result.get("cor", "cinza"),
+                nivel=self._normalize_risk_level(icra_result.get("nivel_risco", "")),
+                confianca=icra_result.get("confianca", "Indefinida"),
+                cor=self._map_risk_color(icra_result.get("nivel_risco", "")),
             )
 
             return MapPointSchema(
@@ -208,9 +245,54 @@ class RiskOrchestrator:
             )
 
         except Exception as e:
+            print("\n[ERRO - RISK ORCHESTRATOR]")
+            print(f"Ponto: {point.id} | {point.nome}")
+            print(f"Data alvo: {target_date}")
+            print(f"Erro: {repr(e)}")
             raise RiskOrchestrationError(
-                f"Erro ao avaliar risco do ponto '{point.nome}': {e}"
+                f"Erro ao avaliar risco do ponto '{point.nome}'"
             )
+        
+    def _normalize_risk_level(self, raw: str) -> str:
+        """
+        Normaliza o nível de risco retornado pela IA para o padrão do frontend.
+        Aceita: "Alto", "alto", "muito_alto", "Muito Alto", "MUITO_ALTO", etc.
+        Retorna: "Baixo" | "Moderado" | "Alto" | "Muito Alto"
+        """
+        if not raw:
+            return "Moderado"
+        v = raw.strip().lower().replace("-", "_").replace(" ", "_")
+
+        mapping = {
+            "baixo": "Baixo",
+            "moderado": "Moderado",
+            "alto": "Alto",
+            "muito_alto": "Muito Alto",
+            "muitoalto": "Muito Alto",
+        }
+        return mapping.get(v, raw.strip().title())       
+
+    def _map_risk_color(self, nivel: str) -> str:
+        """
+        Mapeia o nível de risco para uma cor semântica.
+        """
+        nivel = (nivel or "").lower().strip()
+
+        nivel = nivel.replace("-", "_").replace(" ", "_")
+
+        if nivel == "baixo":
+            return "verde"
+
+        if nivel == "moderado":
+            return "amarelo"
+        if nivel == "alto":
+            return "vermelho"
+
+        if nivel == "muito_alto":
+            return "vermelho_escuro"
+
+        return "cinza"
+
 
     # -------------------------------------------------
     # CHAMADA DA API ICRA
@@ -237,6 +319,11 @@ class RiskOrchestrator:
             json=payload,
             timeout=settings.IA.TIMEOUT,
         )
+
+        print("\n[ICRA API CALL]")
+        print(f"Payload enviado:", payload)
+        print("Status code:", response.status_code)
+        print("Resposta bruta:", response.text)
 
         if response.status_code != 200:
             raise RiskOrchestrationError(
