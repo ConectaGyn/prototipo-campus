@@ -17,7 +17,7 @@ const SensorList: React.FC<SensorListProps> = ({ sensors }) => {
           ))}
         </div>
       ) : (
-        <p className="text-slate-500 dark:text-slate-400">Aguardando dados dos sensores...</p>
+        <p className="text-slate-500 dark:text-slate-400">Pontos críticos carregados. Clique em um ponto para calcular o risco</p>
       )}
     </div>
   );
