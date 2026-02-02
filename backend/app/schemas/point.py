@@ -7,7 +7,7 @@ Responsável apenas por definir contratos de entrada e saída
 da API. Não contém lógica de domínio.
 """
 
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
@@ -36,7 +36,9 @@ class PointResponse(BaseModel):
     id: str = Field(..., description="Identificador único do ponto")
     nome: str = Field(..., description="Nome do ponto crítico")
 
-    localizacao: GeoLocationSchema
+    localizacao: GeoLocationSchema = Field(
+        ..., description="Coordenadas geográficas do ponto"
+    )
 
     ativo: bool = Field(
         True,
@@ -72,4 +74,33 @@ class PointListResponse(BaseModel):
     """
 
     total: int = Field(..., description="Total de pontos retornados")
-    pontos: list[PointResponse]
+    pontos: List[PointResponse]
+
+# ================================
+# SCHEMA DE RISCO POR PONTO
+# ================================
+
+class PointRiskSchema(BaseModel):
+    """
+    Resposta do cálculo de risco para um ponto específico.
+
+    Utilizado  pelo endpoint:
+    GET /map/points/{point_id}/risk
+    """
+
+    icra: float = Field(
+        ...,
+        description="Índice Climático de Risco de Alagamento (ICRA)",
+    )
+    nivel: str = Field(
+        ...,
+        description="Nível risco calculado (Baixo, Moderado, Alto, Muito Alto)",
+    )
+    confianca: str = Field(
+        ...,
+        description="Grau de confiança do modelo da inferência",
+    )
+    cor: str = Field(
+        ...,
+        description="Cor associada ao nível de risco",
+    )
