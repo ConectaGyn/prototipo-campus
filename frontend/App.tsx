@@ -143,14 +143,7 @@ const App: React.FC = () => {
             const lat = item.ponto.localizacao.latitude;
             const lon = item.ponto.localizacao.longitude;
 
-            let weather: CurrentWeather | null = null; 
-
-            try {
-              const weatherData = await getWeatherData(lat, lon);
-              weather = weatherData.current;
-            } catch {
-              weather = null;
-            }
+            const weather: CurrentWeather | null = null;
 
             return {
               id: item.ponto.id,
@@ -170,8 +163,8 @@ const App: React.FC = () => {
                     color: item.risco_atual.cor,
                   }
                 : {
-                    level: 'Nenhum',
-                    message: 'Nenhum risco identificado.',
+                    level: 'Indefinido',
+                    message: 'Clique para calcular o risco deste ponto.',
                     color: 'bg-slate-400'
                   },
             };
@@ -183,31 +176,14 @@ const App: React.FC = () => {
 
         setMapSensors(converted);
 
-        const veryHigh = converted.filter(s => s.alert?.level === 'Muito Alto'); 
-        const high = converted.filter(s => s.alert?.level === 'Alto');
-        const moderate = converted.filter(s => s.alert?.level === 'Moderado');
-
-        if (veryHigh.length || high.length || moderate.length) {
-          setRiskAlert({
-            level: veryHigh.length ? 'Muito Alto' : high.length ? 'Alto' : 'Moderado',
-            message: veryHigh.length
-              ? `Risco Muito Alto em ${veryHigh.map(s => s.location).join(', ')}`
-              : high.length
-                ? `Risco Alto em ${high.map(s => s.location).join(', ')}`
-                : `Risco Moderado em ${moderate.map(s => s.location).join(', ')}`,
-            color: veryHigh.length ? 'bg-red-700' : high.length ? 'bg-red-500' : 'bg-yellow-500',
-            icon: <AlertTriangleIcon className="w-8 h-8 text-white" />,
-          });
-        } else {
           setRiskAlert(null);
-        }
       } catch (err) {
         console.error('Erro ao buscar pontos críticos:', err);
       }
     };
 
     fetchCriticalPoints();
-  }, [displayedCurrentWeather]);
+  }, []);
 
   useEffect(() => {
     updateUserLocationData(true);
