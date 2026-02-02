@@ -31,28 +31,28 @@ class RiskStatusSchema(BaseModel):
     - ou quando o frontend solicita risco sob demanda
     """
 
-    icra: float = Field(
-        ...,
+    icra: Optional[float] = Field(
+        None,
         ge=0,
         le=1,
-        description="Índice Composto de Risco de Alagamento (0 a 1)",
+        description="Índice Composto de Risco de Alagamento (0 a 1). Pode ser nulo se indisponível.",
         example=0.72,
     )
 
-    nivel: str = Field(
-        ...,
+    nivel: Optional[str] = Field(
+        None,
         description="Classificação qualitativa do risco (Baixo, Moderado, Alto, Muito Alto)",
         example="Alto",
     )
 
-    confianca: str = Field(
-        ...,
+    confianca: Optional[str] = Field(
+        None,
         description="Nível de confiança da previsão",
         example="Alta",
     )
 
-    cor: str = Field(
-        ...,
+    cor: Optional[str] = Field(
+        None,
         description="Cor associada ao risco para visualização no mapa",
         example="vermelho",
     )
@@ -77,8 +77,8 @@ class MapPointSchema(BaseModel):
 
     risco_atual: Optional[RiskStatusSchema] = Field(
         None,
-        description=("Estado de risco atual do ponto.",
-        "Pode ser nulo quando o risco não foi calculado ainda.", 
+        description=("Estado de risco atual do ponto."
+        "Pode ser nulo quando o risco não foi calculado ainda." 
         "Ou quando o frontend solicita apenas dados de localização."
         ),
     )
