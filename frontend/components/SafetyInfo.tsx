@@ -119,7 +119,9 @@ const SafetyInfo: React.FC<SafetyInfoProps> = ({ userCoords, sensors = [] }) => 
 
   // Identifica sensores de risco Alto
   const highRiskSensors = useMemo(() => 
-    sensors.filter(s => s.alert?.level === 'Alto'),
+    sensors.filter(
+      s => s.alert?.level === 'Alto' || s.alert?.level === 'Muito Alto'
+    ),
   [sensors]);
 
   // Ordena e Processa os locais
@@ -255,7 +257,7 @@ const SafetyInfo: React.FC<SafetyInfoProps> = ({ userCoords, sensors = [] }) => 
                 ))}
             </div>
             <p className="mt-6 text-xs text-slate-500 dark:text-slate-400">
-                * Locais com rotas seguras são exibidos primeiro.
+                * A priorização considera apenas riscos já calculados no mapa.
             </p>
           </section>
       </div>
