@@ -32,7 +32,7 @@ class AppSettings:
     NAME: str = "ClimaGyn Backend Core"
     VERSION: str = "1.0.0"
 
-    DEBUG: bool = False
+    DEBUG: bool = True
     PORT: int = 8001
 
 
@@ -53,7 +53,14 @@ class IAServiceSettings:
     HEALTH_ENDPOINT: str = "/health"
 
     # Timeout padrão (segundos)
-    TIMEOUT: int = 10
+    TIMEOUT: int = 30
+
+    #Identidade do modelo utilizado
+    MODEL_NAME: str = "ICRA"
+    MODEL_VERSION: str = "v1.0"
+
+    FEATURES_SOURCE = "FeatureBuilder.FEATURE_ORDER"
+
 
 
 # =====================================================
@@ -80,7 +87,7 @@ class ClimateSettings:
     # Estratégia
     # -------------------------------
     PRIMARY_PROVIDER: str = "open_meteo"
-    FALLBACK_PROVIDER: str = "open-weather"
+    FALLBACK_PROVIDER: str = "open_weather"
 
 
 # =====================================================
