@@ -65,6 +65,19 @@ class CriticalPoint:
         Retorna coordenadas no formato (lat, lon).
         """
         return (self.localizacao.latitude, self.localizacao.longitude)
+    
+    def to_feature_payload(self) -> dict:
+        """
+        Retorna uma dicionário básico com informações do ponto
+        para uso em builders de features ou serviços externos
+        """
+        return {
+            "id": self.id,
+            "latitude": self.localizacao.latitude,
+            "longitude": self.localizacao.longitude,
+            "influence_radius_m": self.raio_influencia_m,
+            "bairro": self.bairro,
+        }
 
 
 # ======================================================
