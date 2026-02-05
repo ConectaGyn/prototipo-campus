@@ -10,11 +10,11 @@
  * - APENAS comunica com a API
  */
 
-import type { MapPointsResponse } from "@domains/map/types";
+import type { MapPointsResponse, RiskStatus } from "@domains/map/types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const MAP_POINTS_ENDPOINT = "/map/points";
-const POINT_RISK_ENDPOINT = "/map/points"
+const POINT_RISK_ENDPOINT = "/points"
 
 /**
  * Busca os pontos críticos para renderização no mapa.
@@ -63,7 +63,7 @@ export async function getMapPoints(): Promise<MapPointsResponse> {
    * Busca o risco associado a um ponto específico.
    */
 
-export async function getPointRisk(pointId: string) {
+export async function getPointRisk(pointId: string): Promise<RiskStatus> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000); // 15 segundos
 
@@ -85,7 +85,14 @@ export async function getPointRisk(pointId: string) {
       );
     }
 
-    return await response.json();
+    const raw = await response.json();
+
+    return {
+      icra: raw.icra,
+      nivel: raw.nivel,
+      confianca: raw.confianca,
+      cor: raw.cor,
+    };  
   } finally {
     clearTimeout(timeout);
   }
