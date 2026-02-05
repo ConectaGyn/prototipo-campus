@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { WeatherData, RiskAlert, SensorData, CurrentWeather } from './types.ts';
+import type { WeatherData, RiskAlert, SensorData, CurrentWeather, SensorRiskLevel } from './types.ts';
 import { getWeatherData, getLocationName } from '@services/weather';
 import { getMapPoints } from './services/map.service';
 
@@ -158,15 +158,13 @@ const App: React.FC = () => {
     
               alert: item.risco_atual
                 ? {
-                    level: item.risco_atual.nivel,
+                    level: item.risco_atual.nivel as SensorRiskLevel,
                     message: `Risco ${item.risco_atual.nivel} identificado.`,
                     color: item.risco_atual.cor,
+                    icra: item.risco_atual.icra,
+                    confianca: item.risco_atual.confianca,
                   }
-                : {
-                    level: 'Indefinido',
-                    message: 'Clique para calcular o risco deste ponto.',
-                    color: 'bg-slate-400'
-                  },
+                : null,
             };
           })
         );
@@ -218,7 +216,7 @@ const App: React.FC = () => {
               <AlertCard alert={riskAlert} soundEnabled={isSoundEnabled} />
             </div>
         )}
-        <div className="w-full">
+        <div className="relative z-0 w-full">
           <MapComponent
             sensors={mapSensors}
             userLocation={currentCoords}
