@@ -4,8 +4,6 @@
 // Representam exatamente o contrato do endpoint GET /map/points
 // do backend ClimaGyn.
 //
-// Estes tipos NÃO contêm lógica de UI.
-// São contratos de dados entre Backend ↔ Frontend.
 
 
 // ===============================
@@ -36,33 +34,25 @@ export interface CriticalPoint {
 
 
 // ===============================
-// RISCO (STATUS ATUAL)
+// RISCO (STATUS ATUAL — BACKEND)
 // ===============================
 
 export type RiskLevel = 'Baixo' | 'Moderado' | 'Alto' | 'Muito Alto';
 
 export interface RiskStatus {
-  icra: number;
+  icra?: number;
   nivel: RiskLevel;
-  confianca: "Alta" | "Média" | "Baixa" | string;
-  cor: string;
+  confianca?: 'Alta' | 'Média' | 'Baixa' | string;
+  cor?: string;
 }
 
 
 // ===============================
 // PONTO + RISCO (MAPA)
 // ===============================
-    
+
 export interface MapPoint {
   ponto: CriticalPoint;
-
-  /**
-   * Estado de risco atual.
-   * Pode ser null quando:
-   * - A IA está indisponível
-   * - Erro de inferência
-   * - Ambiente de Validação
-   */
   risco_atual: RiskStatus | null;
 }
 
