@@ -1,0 +1,37 @@
+services:
+  # --- API Python (Backend) ---
+  backend:
+    build: ./backend
+    container_name: campus-backend
+    restart: unless-stopped
+    environment:
+      - AI_SERVICE_URL=http://ai:8001
+      # Adicione outras variáveis do seu backend/app/settings.py aqui
+    networks:
+      - proxy
+      - internal
+
+  # --- Serviço de IA ---
+  ai:
+    build: ./ai
+    container_name: campus-ai
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # --- Frontend (React) ---
+  frontend:
+    build: ./frontend
+    container_name: campus-frontend
+    restart: unless-stopped
+    networks:
+      - proxy
+      - internal
+
+# Redes
+networks:
+  # Rede interna para eles conversarem (Backend <-> IA <-> Frontend)
+  internal:
+  # Rede externa para o Nginx principal do homeserver acessar o Frontend e Backend
+  proxy:
+    external: true
