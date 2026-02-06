@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import type { SensorData } from '../types.ts';
 import { getWeatherData, getLocationName } from '../services/weather/openWeather.service.ts';
+import { on } from 'events';
 
 declare const L: any;
 
@@ -19,6 +20,7 @@ interface MapComponentProps {
   routePath?: { lat: number; lon: number }[];
   routeStops?: RouteStop[];
   highlightedSensors?: SensorData[];
+  onRiskCalculated?: (sensorId: string, risk: any) => void;
 }
 
 const MapComponent: React.FC<MapComponentProps> = ({
@@ -27,7 +29,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
   userLocation,
   routePath,
   routeStops,
-  highlightedSensors
+  highlightedSensors,
+  onRiskCalculated,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -226,6 +229,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
             riskCacheRef.current[sensor.id] = risk;
             marker.setIcon(getMarkerIcon(risk.nivel));
             marker.setPopupContent(popupWeatherWithRisk(sensor.location, weather, risk));
+            onRiskCalculated?.(sensor.id, risk);
           } else {
             marker.setPopupContent(popupWeatherOnly(sensor.location, weather));
           }
