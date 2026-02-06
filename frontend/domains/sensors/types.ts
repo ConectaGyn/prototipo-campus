@@ -3,16 +3,24 @@
 // Tipos relacionados aos elementos exibidos no mapa e UI
 // Um SensorData pode representar:
 // - um ponto crítico real do backend
-// - um ponto climatico (OpenWeather)
+// - um ponto climático (OpenWeather)
 // - um ponto simulado (módulo de simulação)
 //
 
 import type { ReactElement } from 'react';
 
-export type SensorRiskLevel = 'Baixo' | 'Moderado' | 'Alto' |'Muito Alto' | 'Nenhum';
+export type SensorRiskLevel =
+  | 'Baixo'
+  | 'Moderado'
+  | 'Alto'
+  | 'Muito Alto'
+  | 'Nenhum';
+
+export type SensorRiskStatus = 'nao_avaliado' | 'avaliado';
 
 export interface SensorAlert {
   level: SensorRiskLevel;
+  status?: SensorRiskStatus;
   icra?: number;
   message?: string;
   confianca?: string;
