@@ -143,18 +143,18 @@ const App: React.FC = () => {
             const lat = item.ponto.localizacao.latitude;
             const lon = item.ponto.localizacao.longitude;
 
-            const weather: CurrentWeather | null = null;
+            const weather = await getWeatherData(lat, lon);
 
             return {
               id: item.ponto.id,
               location: item.ponto.nome,
               coords: { lat, lon },
-              temp: weather?.temp,
-              humidity: weather?.humidity,
-              wind_speed: weather?.wind_speed,
-              feels_like: weather?.feels_like,
-              pressure: weather?.pressure,
-              rain: weather?.rain,
+              temp: weather.current.temp,
+              humidity: weather.current.humidity,
+              wind_speed: weather.current.wind_speed,
+              feels_like: weather.current.feels_like,
+              pressure: weather.current.pressure,
+              rain: weather.current.rain,
     
               alert: item.risco_atual
                 ? {
@@ -221,6 +221,24 @@ const App: React.FC = () => {
             sensors={mapSensors}
             userLocation={currentCoords}
             className="h-[60vh] md:h-[65vh]"
+            onRiskCalculated={(sensorId, risk) => {
+              setMapSensors(prev =>
+                prev.map(sensor =>
+                  sensor.id === sensorId
+                    ? {
+                        ...sensor,
+                        alert: {
+                          level: risk.nivel as SensorRiskLevel,
+                          message: risk.mensagem,
+                          color: risk.cor,
+                          icra: risk.icra,
+                          confianca: risk.confianca,
+                        },
+                      }
+                    : sensor
+                )
+              );
+            }}
           />
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
