@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
@@ -23,8 +22,8 @@ const BaseIcon: React.FC<IconProps & { children: React.ReactNode }> = ({
     strokeLinecap="round"
     strokeLinejoin="round"
     className={className}
-    aria-hidden={!title ? "true" : undefined} // Esconde do leitor de tela se não tiver título
-    role={title ? "img" : undefined}
+    aria-hidden={!title ? 'true' : undefined}
+    role={title ? 'img' : undefined}
     {...props}
   >
     {title && <title>{title}</title>}
@@ -68,13 +67,15 @@ export const SunIcon: React.FC<IconProps> = (props) => (
 
 export const GaugeIcon: React.FC<IconProps> = (props) => (
   <BaseIcon {...props}>
-    <path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" />
+    <path d="m12 14 4-4" />
+    <path d="M3.34 19a10 10 0 1 1 17.32 0" />
   </BaseIcon>
 );
 
 export const CompassIcon: React.FC<IconProps> = (props) => (
   <BaseIcon {...props}>
-    <circle cx="12" cy="12" r="10" /><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+    <circle cx="12" cy="12" r="10" />
+    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
   </BaseIcon>
 );
 
@@ -95,25 +96,39 @@ export const CloudRainIcon: React.FC<IconProps> = (props) => (
 
 export const CloudDrizzleIcon: React.FC<IconProps> = (props) => (
   <BaseIcon {...props}>
-    <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" /><path d="M8 19v1" /><path d="M8 14v1" /><path d="M16 19v1" /><path d="M16 14v1" /><path d="M12 15v1" /><path d="M12 20v1" />
+    <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+    <path d="M8 19v1" />
+    <path d="M8 14v1" />
+    <path d="M16 19v1" />
+    <path d="M16 14v1" />
+    <path d="M12 15v1" />
+    <path d="M12 20v1" />
   </BaseIcon>
 );
 
 export const CloudLightningIcon: React.FC<IconProps> = (props) => (
   <BaseIcon {...props}>
-    <path d="M6 16.326A7 7 0 1 1 17.71 8h1.79a4.5 4.5 0 0 1 .5 8.973" /><path d="m13 12-3 5h4l-3 5" />
+    <path d="M6 16.326A7 7 0 1 1 17.71 8h1.79a4.5 4.5 0 0 1 .5 8.973" />
+    <path d="m13 12-3 5h4l-3 5" />
   </BaseIcon>
 );
 
 export const CloudSnowIcon: React.FC<IconProps> = (props) => (
   <BaseIcon {...props}>
-    <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" /><path d="M12 12v6" /><path d="m12 18 2-2" /><path d="m12 18-2-2" /><path d="m9 15 2-2" /><path d="m13 15-2-2" />
+    <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+    <path d="M12 12v6" />
+    <path d="m12 18 2-2" />
+    <path d="m12 18-2-2" />
+    <path d="m9 15 2-2" />
+    <path d="m13 15-2-2" />
   </BaseIcon>
 );
 
 export const CloudFogIcon: React.FC<IconProps> = (props) => (
   <BaseIcon {...props}>
-    <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" /><path d="M2 20h20" /><path d="M6 16h12" />
+    <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+    <path d="M2 20h20" />
+    <path d="M6 16h12" />
   </BaseIcon>
 );
 
@@ -122,7 +137,6 @@ export const MoonIcon: React.FC<IconProps> = (props) => (
     <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
   </BaseIcon>
 );
-
 
 export const RefreshCwIcon: React.FC<IconProps> = (props) => (
   <BaseIcon {...props}>
@@ -302,18 +316,51 @@ export const EyeOffIcon: React.FC<IconProps> = (props) => (
   </BaseIcon>
 );
 
+/**
+ * Ícone para estado "não avaliado" / "risco não calculado".
+ * Alinha a UI ao novo comportamento: ausência de risco ≠ risco baixo.
+ */
+export const ClockIcon: React.FC<IconProps> = (props) => (
+  <BaseIcon {...props}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 6v6l4 2" />
+  </BaseIcon>
+);
 
-export const WeatherIcon: React.FC<{ iconCode: string, className?: string, title?: string }> = ({ iconCode, className, title }) => {
+export const WeatherIcon: React.FC<{
+  iconCode: string;
+  className?: string;
+  title?: string;
+}> = ({ iconCode, className, title }) => {
   const props = { className, title };
   switch (iconCode) {
-    case '01d': return <SunIcon {...props} />;
-    case '01n': return <MoonIcon {...props} />;
-    case '02d': case '02n': case '03d': case '03n': case '04d': case '04n': return <CloudIcon {...props} />;
-    case '09d': case '09n': return <CloudDrizzleIcon {...props} />;
-    case '10d': case '10n': return <CloudRainIcon {...props} />;
-    case '11d': case '11n': return <CloudLightningIcon {...props} />;
-    case '13d': case '13n': return <CloudSnowIcon {...props} />;
-    case '50d': case '50n': return <CloudFogIcon {...props} />;
-    default: return <SunIcon {...props} />;
+    case '01d':
+      return <SunIcon {...props} />;
+    case '01n':
+      return <MoonIcon {...props} />;
+    case '02d':
+    case '02n':
+    case '03d':
+    case '03n':
+    case '04d':
+    case '04n':
+      return <CloudIcon {...props} />;
+    case '09d':
+    case '09n':
+      return <CloudDrizzleIcon {...props} />;
+    case '10d':
+    case '10n':
+      return <CloudRainIcon {...props} />;
+    case '11d':
+    case '11n':
+      return <CloudLightningIcon {...props} />;
+    case '13d':
+    case '13n':
+      return <CloudSnowIcon {...props} />;
+    case '50d':
+    case '50n':
+      return <CloudFogIcon {...props} />;
+    default:
+      return <SunIcon {...props} />;
   }
 };
