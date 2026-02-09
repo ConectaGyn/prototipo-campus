@@ -1,37 +1,72 @@
 services:
+  # --- Serviço de IA (FastAPI) ---
+  ai:
+    build:
+      context: ./ai
+    container_name: campus-ai
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    # Monte os artefatos do modelo em ./ai/models (não estão no repositório)
+    volumes:
+      - ./ai/models:/src/ai/models:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8001/health').read()",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   # --- API Python (Backend) ---
   backend:
-    build: ./backend
+    build:
+      context: ./backend
     container_name: campus-backend
     restart: unless-stopped
     environment:
+      # Usado por backend/app/settings.py
       - AI_SERVICE_URL=http://ai:8001
-      # Adicione outras variáveis do seu backend/app/settings.py aqui
-    networks:
-      - proxy
-      - internal
+      # Opcional: chave do OpenWeather (caso backend use)
+      - OPEN_WEATHER_API_KEY=${OPEN_WEATHER_API_KEY:-}
+    depends_on:
+      ai:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    # Monte os pontos críticos em ./data/metadata/pontos_criticos.csv
+    # O backend espera em: /src/ai/data/metadata/pontos_criticos.csv
+    volumes:
+      - ./data:/src/ai/data:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
-  # --- Serviço de IA ---
-  ai:
-    build: ./ai
-    container_name: campus-ai
-    restart: unless-stopped
-    networks:
-      - internal
-
-  # --- Frontend (React) ---
+  # --- Frontend (Vite build + Nginx) ---
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # Vite lê isso no build (import.meta.env.*)
+        VITE_API_BASE_URL: "http://localhost:8000"
+        VITE_WEATHER_API_KEY: "${VITE_WEATHER_API_KEY}"
+        VITE_MAPBOX_TOKEN: "${VITE_MAPBOX_TOKEN}"
     container_name: campus-frontend
     restart: unless-stopped
-    networks:
-      - proxy
-      - internal
-
-# Redes
-networks:
-  # Rede interna para eles conversarem (Backend <-> IA <-> Frontend)
-  internal:
-  # Rede externa para o Nginx principal do homeserver acessar o Frontend e Backend
-  proxy:
-    external: true
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"

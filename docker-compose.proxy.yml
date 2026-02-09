@@ -1,0 +1,57 @@
+services:
+  ai:
+    build:
+      context: ./ai
+    container_name: campus-ai
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - ./ai/models:/src/ai/models:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health').read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: campus-backend
+    restart: unless-stopped
+    environment:
+      - AI_SERVICE_URL=http://ai:8001
+      - OPEN_WEATHER_API_KEY=${OPEN_WEATHER_API_KEY:-}
+    depends_on:
+      ai:
+        condition: service_healthy
+    networks:
+      - internal
+      - proxy
+    volumes:
+      - ./data:/src/ai/data:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Em reverse proxy, costuma ser conveniente expor a API como /api
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    container_name: campus-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - internal
+      - proxy
+
+networks:
+  internal:
+  proxy:
+    external: true
