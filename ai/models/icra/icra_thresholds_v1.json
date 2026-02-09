@@ -1,0 +1,11 @@
+{
+    "baixo_max": 0.142,
+    "moderado_max": 0.278,
+    "alto_max": 0.426,
+    "descricao": {
+        "baixo": "ICRA < 0.142",
+        "moderado": "0.142 ≤ ICRA < 0.278",
+        "alto": "0.278 ≤ ICRA < 0.426",
+        "muito_alto": "ICRA ≥ 0.426"
+    }
+}

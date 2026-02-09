@@ -1,0 +1,28 @@
+{
+    "model_version": "v1",
+    "num_features": 21,
+    "features": [
+        "precipitacao_total_mm",
+        "precipitacao_ma_7d",
+        "precipitacao_ma_30d",
+        "precipitacao_ma_90d",
+        "anomalia_precip_7d",
+        "anomalia_precip_30d",
+        "intensidade_precipitacao",
+        "precipitacao_lag_1d",
+        "precipitacao_lag_2d",
+        "precipitacao_lag_3d",
+        "precipitacao_lag_7d",
+        "precipitacao_lag_14d",
+        "precipitacao_lag_30d",
+        "temperatura_media_2m_C",
+        "temperatura_aparente_media_2m_C",
+        "temperatura_lag_1d",
+        "temperatura_lag_7d",
+        "mes_sin",
+        "mes_cos",
+        "dia_sin",
+        "dia_cos"
+    ],
+    "observacao": "A ordem das features deve ser preservada na inferência."
+}
