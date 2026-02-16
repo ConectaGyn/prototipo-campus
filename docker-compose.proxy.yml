@@ -40,15 +40,16 @@ services:
     build:
       context: ./frontend
       args:
-        # Em reverse proxy, costuma ser conveniente expor a API como /api
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        # Em reverse proxy, o frontend deve chamar a API por path relativo
+        VITE_API_BASE_URL: "/api"
+        VITE_WEATHER_API_KEY: "${VITE_WEATHER_API_KEY:-}"
+        VITE_MAPBOX_TOKEN: "${VITE_MAPBOX_TOKEN:-}"
     container_name: campus-frontend
     restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
     networks:
-      - internal
       - proxy
 
 networks:

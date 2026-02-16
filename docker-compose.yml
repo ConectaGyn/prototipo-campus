@@ -7,17 +7,10 @@ services:
     restart: unless-stopped
     ports:
       - "8001:8001"
-    # Monte os artefatos do modelo em ./ai/models (não estão no repositório)
     volumes:
       - ./ai/models:/src/ai/models:ro
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8001/health').read()",
-        ]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health').read()"]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -29,27 +22,17 @@ services:
     container_name: campus-backend
     restart: unless-stopped
     environment:
-      # Usado por backend/app/settings.py
       - AI_SERVICE_URL=http://ai:8001
-      # Opcional: chave do OpenWeather (caso backend use)
       - OPEN_WEATHER_API_KEY=${OPEN_WEATHER_API_KEY:-}
     depends_on:
       ai:
         condition: service_healthy
     ports:
       - "8000:8000"
-    # Monte os pontos críticos em ./data/metadata/pontos_criticos.csv
-    # O backend espera em: /src/ai/data/metadata/pontos_criticos.csv
     volumes:
       - ./data:/src/ai/data:ro
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()",
-        ]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -59,10 +42,9 @@ services:
     build:
       context: ./frontend
       args:
-        # Vite lê isso no build (import.meta.env.*)
         VITE_API_BASE_URL: "http://localhost:8000"
-        VITE_WEATHER_API_KEY: "${VITE_WEATHER_API_KEY}"
-        VITE_MAPBOX_TOKEN: "${VITE_MAPBOX_TOKEN}"
+        VITE_WEATHER_API_KEY: "${VITE_WEATHER_API_KEY:-}"
+        VITE_MAPBOX_TOKEN: "${VITE_MAPBOX_TOKEN:-}"
     container_name: campus-frontend
     restart: unless-stopped
     depends_on:
