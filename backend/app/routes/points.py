@@ -1,125 +1,173 @@
 """
-points.py
+routes/points.py
 
-Rotas relacionadas aos pontos críticos monitorados.
-Responsável por fornecer dados consolidados para o frontend.
+Rotas relacionadas aos pontos críticos e seus estados de risco.
+
+Este módulo:
+- NÃO calcula risco diretamente
+- NÃO acessa APIs externas
+- NÃO implementa regra de negócio complexa
+- Apenas orquestra chamadas ao RiskOrchestrator
 """
 
-from datetime import date, datetime
+from datetime import datetime
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
 
-from backend.app.services.risk_orchestrator import RiskOrchestrator, RiskOrchestrationError
-from backend.app.schemas.point import PointResponse
-from backend.app.schemas.map import RiskStatusSchema
-
-
-router = APIRouter(
-    prefix="/points",
-    tags=["Points"],
+from backend.app.database import get_db
+from backend.app.settings import settings
+from backend.app.services.risk_orchestrator import (
+    RiskOrchestrator,
+    RiskOrchestrationError,
 )
+from backend.app.repositories.risk_repository import RiskRepository
+from backend.app.schemas.point import PointResponse
+from backend.app.schemas.map import RiskSnapshotResponse
+from backend.app.services.risk_relative import compute_relative_levels_by_point
 
-_points_loader = RiskOrchestrator()
+
+router = APIRouter(prefix="/points", tags=["Points"])
+
 
 # =====================================================
-# LISTAGEM DE PONTOS ESTATICOS
+# LISTAGEM DE PONTOS (METADADOS)
 # =====================================================
 
 @router.get(
     "",
     response_model=list[PointResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Lista de pontos críticos monitorados",
-    description=(
-        "Retorna todos os pontos críticos monitorados, "
-        "com localização e metadados básicos."
-    ),
+    summary="Lista todos os pontos críticos monitorados",
 )
-def list_points():
+def list_points(
+    db: Session = Depends(get_db),
+):
     """
-    Lista todos os pontos críticos carregados do CSV oficial.
-    Não executa cálculo de risco (apenas dados estáticos).
+    Retorna apenas metadados dos pontos (sem risco).
     """
 
     try:
-        points = _points_loader.get_all_points()
+        repo = RiskRepository(db)
+        orchestrator = RiskOrchestrator(repository=repo)
 
-        return [
-            PointResponse(
-                id=p.id,
-                nome=p.nome,
-                localizacao={
-                    "latitude": p.localizacao.latitude,
-                    "longitude": p.localizacao.longitude,
-                },
-                ativo=bool(p.ativo),
-                raio_influencia_m=p.raio_influencia_m,
-                bairro=p.bairro or None,
-                descricao=p.descricao or None,
-            )
-            for p in points
-        ]
+        points = orchestrator.list_points(db=db, only_active=False)
+
+        return [PointResponse.model_validate(p) for p in points]
 
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao carregar pontos críticos: {e}",
+            detail=f"Erro ao listar pontos: {e}",
         )
-    
+
+
 # =====================================================
-# RISCO SOB DEMANDA POR PONTO
+# RISCO POR PONTO (SNAPSHOT GLOBAL)
 # =====================================================
 
 @router.get(
     "/{point_id}/risk",
-    response_model=RiskStatusSchema,
-    status_code=status.HTTP_200_OK,
-    summary="Calcula o risco climático de um ponto especifico",
-    description=(
-        "Executa o cálculo de risco climático via IA apenas para o ponto solicitado"
-    ),
+    response_model=RiskSnapshotResponse,
+    summary="Retorna risco do ponto com snapshot intervalado",
 )
-def calculate_point_risk(point_id: str):
-    """
-    Calcula o risco climático para um ponto específico.
-    Executado sob demanda (ex: clique no mapa)
-    """
+def get_point_risk(
+    point_id: str,
+    at: Optional[datetime] = Query(
+        None,
+        description="Timestamp ISO para consultar bucket específico",
+    ),
+    refresh: bool = Query(
+        False,
+        description="Força recálculo do snapshot",
+    ),
+    source: str = Query(
+        "auto",
+        description="auto | cache_only | compute_only",
+    ),
+    db: Session = Depends(get_db),
+):
 
     try:
-        points = _points_loader.get_all_points()
-        point = next((p for p in points if p.id == point_id), None)
+        repo = RiskRepository(db)
+        orchestrator = RiskOrchestrator(repository=repo)
 
-        if not point:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Ponto com ID '{point_id}' não encontrado.",
+        # -------------------------------------------------
+        # Define bucket global
+        # -------------------------------------------------
+
+        reference_ts = at or orchestrator.get_reference_ts_now()
+
+        # -------------------------------------------------
+        # CACHE ONLY
+        # -------------------------------------------------
+
+        if source == "cache_only":
+            snapshot = repo.get_snapshot(
+                point_id=point_id,
+                snapshot_timestamp=reference_ts,
             )
-        
-        result = _points_loader.evaluate_point_risk(
-            point=point,
-            target_date=date.today(),
-            with_history=True,
+
+            if not snapshot:
+                raise HTTPException(status_code=status.HTTP_204_NO_CONTENT)
+
+            bucket_snaps = repo.get_snapshots_by_bucket(reference_ts)
+            relative = compute_relative_levels_by_point(bucket_snaps).get(point_id)
+            return RiskSnapshotResponse.from_model(
+                snapshot,
+                source="snapshot",
+                relative_level=relative,
+            )
+
+        # -------------------------------------------------
+        # AUTO MODE (padrão)
+        # -------------------------------------------------
+
+        if not refresh and source != "compute_only":
+            snapshot = repo.get_snapshot(
+                point_id=point_id,
+                snapshot_timestamp=reference_ts,
+            )
+
+            if snapshot:
+                bucket_snaps = repo.get_snapshots_by_bucket(reference_ts)
+                relative = compute_relative_levels_by_point(bucket_snaps).get(point_id)
+                return RiskSnapshotResponse.from_model(
+                    snapshot,
+                    source="snapshot",
+                    relative_level=relative,
+                )
+
+        # -------------------------------------------------
+        # COMPUTE / FALLBACK
+        # -------------------------------------------------
+
+        snapshot = orchestrator.get_or_compute_point_snapshot(
+            db=db,
+            point_id=point_id,
+            reference_ts=reference_ts,
+            force_recompute=refresh or source == "compute_only",
         )
 
-        if not result.risco_atual:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Não foi possível calcular o risco no momento",
-            )
-        
-        return result.risco_atual
-    
-    except HTTPException:
-        raise
+        bucket_snaps = repo.get_snapshots_by_bucket(reference_ts)
+        relative = compute_relative_levels_by_point(bucket_snaps).get(point_id)
+        return RiskSnapshotResponse.from_model(
+            snapshot,
+            source="on_demand",
+            relative_level=relative,
+        )
 
     except RiskOrchestrationError as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Serviço de cálculo de risco indisponível no momento:",
+            detail=str(e),
         )
-    
+
+    except HTTPException:
+        raise
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro inesperado ao calcular risco do ponto '{point_id}': {e}",
+            detail=f"Erro inesperado ao obter risco: {e}",
         )

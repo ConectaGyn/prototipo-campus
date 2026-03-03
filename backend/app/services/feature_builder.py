@@ -2,14 +2,14 @@
 feature_builder.py
 
 Responsável por construir o vetor de features utilizado pelo
-modelo ICRA a partir de dados climáticos atuais e históricos.
+modelo ICRA a partir de uma série climática diária completa.
 
 Este módulo:
 - NÃO executa inferência
-- NÃO classifica risco
-- NÃO acessa APIs externas diretamente
+- NÃO acessa APIs externas
+- NÃO salva dados
 
-Ele apenas transforma dados em features numéricas.
+Ele apenas transforma séries climáticas em features numéricas.
 """
 
 from typing import Dict, List
@@ -17,9 +17,9 @@ from datetime import date
 import math
 
 
-# ================================
-# CONTRATO DE FEATURES (ORDEM!)
-# ================================
+# =====================================================
+# CONTRATO FORMAL DE FEATURES (ORDEM DO MODELO)
+# =====================================================
 
 FEATURE_ORDER: List[str] = [
     "precipitacao_total_mm",
@@ -46,21 +46,22 @@ FEATURE_ORDER: List[str] = [
 ]
 
 
-# ================================
-# EXCEÇÕES
-# ================================
+# =====================================================
+# EXCEÇÃO
+# =====================================================
 
 class FeatureBuilderError(Exception):
     """Erro na construção das features."""
 
 
-# ================================
+# =====================================================
 # FEATURE BUILDER
-# ================================
+# =====================================================
 
 class FeatureBuilder:
     """
-    Constrói as features do modelo ICRA.
+    Constrói as features do modelo ICRA a partir de
+    uma série diária ordenada cronologicamente.
     """
 
     # -------------------------------------------------
@@ -70,138 +71,132 @@ class FeatureBuilder:
     def build_features(
         self,
         climate_today: Dict[str, float],
-        climate_history: Dict[str, List[float]],
+        climate_history: List[Dict[str, float]],
         target_date: date,
     ) -> Dict[str, float]:
         """
-        Constrói todas as features necessárias para inferência.
-
-        Parâmetros
-        ----------
-        climate_today : dict
-            Dados climáticos do dia atual
-        climate_history : dict
-            Séries históricas (listas ordenadas por tempo)
-        target_date : date
-            Data da previsão
-
-        Retorno
-        -------
-        dict
-            Dicionário com todas as features
+        Constrói features a partir de:
+        - climate_today: dict com valores do dia atual
+        - climate_history: dict com listas históricas (index 0 = ontem)
         """
 
         try:
-            features = {}
-
-            # ==========================
-            # BASE DIRETA
-            # ==========================
-            features["precipitacao_total_mm"] = float(climate_today.get("precipitacao_total_mm", 0.0))
-            features["temperatura_media_2m_C"] = float(climate_today.get("temperatura_media_2m_C", 0.0))
-            features["temperatura_aparente_media_2m_C"] = float(climate_today.get("temperatura_aparente_media_2m_C", 0.0))
-           
-            # ==========================
-            # MÉDIAS MÓVEIS
-            # ==========================
             precip_series = climate_history.get("precipitacao_total_mm", [])
+            temp_series = climate_history.get("temperatura_media_2m_C", [])
 
-            features["precipitacao_ma_7d"] = self._safe_mean(
-                precip_series, 7)
-            features["precipitacao_ma_30d"] = self._safe_mean(
-                precip_series, 30
-            )
-            features["precipitacao_ma_90d"] = self._safe_mean(
-                precip_series, 90
+            features: Dict[str, float] = {}
+
+            # =================================================
+            # BASE DIRETA
+            # =================================================
+
+            features["precipitacao_total_mm"] = float(
+                climate_today.get("precipitacao_total_mm", 0.0)
             )
 
-            # ==========================
+            features["temperatura_media_2m_C"] = float(
+                climate_today.get("temperatura_media_2m_C", 0.0)
+            )
+
+            features["temperatura_aparente_media_2m_C"] = float(
+                climate_today.get("temperatura_aparente_media_2m_C", 0.0)
+            )
+
+            # =================================================
+            # MÉDIAS MÓVEIS
+            # =================================================
+
+            features["precipitacao_ma_7d"] = self._moving_average(precip_series, 7)
+            features["precipitacao_ma_30d"] = self._moving_average(precip_series, 30)
+            features["precipitacao_ma_90d"] = self._moving_average(precip_series, 90)
+
+            # =================================================
             # ANOMALIAS
-            # ==========================
+            # =================================================
+
             features["anomalia_precip_7d"] = (
                 features["precipitacao_total_mm"]
                 - features["precipitacao_ma_7d"]
             )
+
             features["anomalia_precip_30d"] = (
                 features["precipitacao_total_mm"]
                 - features["precipitacao_ma_30d"]
             )
 
-            # ==========================
+            # =================================================
             # INTENSIDADE
-            # ==========================
-            denominador = features["precipitacao_ma_7d"]
+            # =================================================
 
-            if denominador <= 0.1:
-                features["intensidade_precipitacao"] = 0.0
-            else:
+            media_7d = features["precipitacao_ma_7d"]
+
+            if media_7d > 0:
                 features["intensidade_precipitacao"] = (
-                    features["precipitacao_total_mm"] / denominador
+                    features["precipitacao_total_mm"] / media_7d
                 )
+            else:
+                features["intensidade_precipitacao"] = 0.0
 
-            # ==========================
+            # =================================================
             # LAGS DE PRECIPITAÇÃO
-            # ==========================
-            features["precipitacao_lag_1d"] = self._safe_lag(precip_series, 1)
-            features["precipitacao_lag_2d"] = self._safe_lag(precip_series, 2)
-            features["precipitacao_lag_3d"] = self._safe_lag(precip_series, 3)
-            features["precipitacao_lag_7d"] = self._safe_lag(precip_series, 7)
-            features["precipitacao_lag_14d"] = self._safe_lag(precip_series, 14)
-            features["precipitacao_lag_30d"] = self._safe_lag(precip_series, 30)
-    
-            # ==========================
+            # =================================================
+
+            features["precipitacao_lag_1d"] = self._lag(precip_series, 1)
+            features["precipitacao_lag_2d"] = self._lag(precip_series, 2)
+            features["precipitacao_lag_3d"] = self._lag(precip_series, 3)
+            features["precipitacao_lag_7d"] = self._lag(precip_series, 7)
+            features["precipitacao_lag_14d"] = self._lag(precip_series, 14)
+            features["precipitacao_lag_30d"] = self._lag(precip_series, 30)
+
+            # =================================================
             # LAGS DE TEMPERATURA
-            # ==========================
-            temp_serie = climate_history.get("temperatura_media_2m_C", [])
+            # =================================================
 
-            features["temperatura_lag_1d"] = self._safe_lag(temp_serie, 1)
-            features["temperatura_lag_7d"] = self._safe_lag(temp_serie, 7)
+            features["temperatura_lag_1d"] = self._lag(temp_series, 1)
+            features["temperatura_lag_7d"] = self._lag(temp_series, 7)
 
-            # ==========================
+            # =================================================
             # COMPONENTES SAZONAIS
-            # ==========================
+            # =================================================
+
             features.update(self._seasonal_components(target_date))
 
-            # ==========================
+            # =================================================
             # VALIDAÇÃO FINAL
-            # ==========================
+            # =================================================
+
             self._validate(features)
 
             return features
 
         except Exception as e:
-            raise FeatureBuilderError(f"Erro ao construir features: (data={target_date}): {e}")
+            raise FeatureBuilderError(
+                f"Erro ao construir features (data={target_date}): {e}"
+            )
 
     # -------------------------------------------------
     # HELPERS
     # -------------------------------------------------
 
-    def _mean(self, series: List[float], window: int) -> float:
-        if len(series) < window:
-            raise FeatureBuilderError(
-                f"Histórico insuficiente para média móvel de {window} dias"
-            )
-        return sum(series[-window:]) / window
-    
-    def _safe_mean(self, series: List[float], window: int) -> float:
+    def _moving_average(self, series: List[float], window: int) -> float:
         if not series:
             return 0.0
+
         if len(series) < window:
             return sum(series) / len(series)
+
         return sum(series[-window:]) / window
 
-    def _safe_lag(self, series: List[float], lag: int) -> float:
+    def _lag(self, series: List[float], lag: int) -> float:
         if not series:
             return 0.0
+
         if len(series) < lag:
-            return series[0]
+            return series[-1]
+
         return series[-lag]
 
     def _seasonal_components(self, d: date) -> Dict[str, float]:
-        """
-        Calcula componentes seno/cosseno de mês e dia.
-        """
-
         mes = d.month
         dia_ano = d.timetuple().tm_yday
 
@@ -213,11 +208,8 @@ class FeatureBuilder:
         }
 
     def _validate(self, features: Dict[str, float]) -> None:
-        """
-        Garante que todas as features exigidas existem.
-        """
-
         missing = [f for f in FEATURE_ORDER if f not in features]
+
         if missing:
             raise FeatureBuilderError(
                 f"Features faltando: {', '.join(missing)}"

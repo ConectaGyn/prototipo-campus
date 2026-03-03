@@ -1,107 +1,94 @@
 """
-map.py
-
-Schemas relacionados à visualização do mapa e estado atual
-dos pontos críticos monitorados.
-
-Define os contratos entre backend e frontend para o módulo
-de mapa, separando claramente:
-- dados espaciais
-- estado de risco 
+Schemas para endpoints de mapa e snapshot pontual.
 """
 
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from backend.app.schemas.point import PointResponse
 
+class MapPointViewSchema(BaseModel):
+    id: str = Field(..., description="Identificador unico do ponto")
+    nome: str = Field(..., description="Nome do ponto critico")
 
-# =====================================================
-# SCHEMAS DE RISCO
-# =====================================================
+    latitude: float = Field(..., description="Latitude do ponto")
+    longitude: float = Field(..., description="Longitude do ponto")
 
-class RiskStatusSchema(BaseModel):
-    """
-    Estado de risco atual associado a um ponto crítico.
-
-    Este schema é utilizado:
-    - quando o risco já foi calculado para o ponto
-    - ou quando o frontend solicita risco sob demanda
-    """
+    bairro: Optional[str] = Field(None, description="Bairro ou regiao do ponto")
+    raio_influencia_m: int = Field(..., description="Raio de influencia em metros")
+    ativo: bool = Field(..., description="Indica se o ponto esta ativo")
+    municipality_id: Optional[int] = Field(
+        None, description="ID do municipio ao qual o ponto pertence"
+    )
 
     icra: Optional[float] = Field(
-        None,
-        ge=0,
-        le=1,
-        description="Índice Composto de Risco de Alagamento (0 a 1). Pode ser nulo se indisponível.",
-        example=0.72,
+        None, ge=0, le=1, description="Indice Climatico de Risco de Alagamento (0 a 1)"
     )
-
-    nivel: Optional[str] = Field(
-        None,
-        description="Classificação qualitativa do risco (Baixo, Moderado, Alto, Muito Alto)",
-        example="Alto",
+    icra_std: Optional[float] = Field(
+        None, description="Desvio padrao do ICRA (incerteza do modelo)"
     )
-
+    nivel_risco: Optional[str] = Field(
+        None, description="Classificacao absoluta retornada pelo modelo"
+    )
+    nivel_risco_relativo: Optional[str] = Field(
+        None, description="Classificacao relativa no ciclo (quartis)"
+    )
     confianca: Optional[str] = Field(
-        None,
-        description="Nível de confiança da previsão",
-        example="Alta",
+        None, description="Nivel de confianca da inferencia"
     )
-
-    cor: Optional[str] = Field(
-        None,
-        description="Cor associada ao risco para visualização no mapa",
-        example="vermelho",
+    referencia_em: Optional[datetime] = Field(
+        None, description="Timestamp de referencia do snapshot utilizado"
     )
 
 
-# =====================================================
-# SCHEMA DE PONTO NO MAPA
-# =====================================================
+class RiskSnapshotResponse(BaseModel):
+    point_id: str = Field(..., description="Identificador unico do ponto critico")
 
-class MapPointSchema(BaseModel):
-    """
-    Representação de um ponto no contexto do mapa.
+    icra: float = Field(
+        ..., ge=0, le=1, description="Indice Climatico de Risco de Alagamento (0 a 1)"
+    )
+    icra_std: float = Field(..., description="Desvio padrao do ICRA")
 
-    - sempre contém dados de localização
-    - pode ou não conter risco atual associado
-    """
+    nivel_risco: str = Field(
+        ..., description="Classificacao absoluta retornada pelo modelo"
+    )
+    nivel_risco_relativo: Optional[str] = Field(
+        None, description="Classificacao relativa no ciclo (quartis)"
+    )
+    confianca: str = Field(..., description="Nivel de confianca da inferencia")
 
-    ponto: PointResponse = Field(
+    referencia_em: datetime = Field(
+        ..., description="Timestamp exato do snapshot utilizado"
+    )
+    fonte: str = Field(
         ...,
-        description="Informações básicas e localização do ponto crítico",
+        description="'snapshot' (persistido) ou 'on_demand' (calculado sob demanda)",
+        json_schema_extra={"example": "snapshot"},
     )
 
-    risco_atual: Optional[RiskStatusSchema] = Field(
-        None,
-        description=("Estado de risco atual do ponto."
-        "Pode ser nulo quando o risco não foi calculado ainda." 
-        "Ou quando o frontend solicita apenas dados de localização."
-        ),
-    )
+    @classmethod
+    def from_model(cls, snapshot, source: str, relative_level: Optional[str] = None):
+        return cls(
+            point_id=snapshot.point_id,
+            icra=snapshot.icra,
+            icra_std=snapshot.icra_std,
+            nivel_risco=snapshot.nivel_risco,
+            nivel_risco_relativo=relative_level,
+            confianca=snapshot.confianca,
+            referencia_em=snapshot.snapshot_timestamp,
+            fonte=source,
+        )
 
-
-# =====================================================
-# SCHEMA DE RESPOSTA DO MAPA
-# =====================================================
 
 class MapPointsResponse(BaseModel):
-    """
-    Resposta do endpoint /map/points.
-
-    Utilizada para renderização inicial do mapa no frontend,
-    """
-
-    pontos: List[MapPointSchema] = Field(
-        ...,
-        description="Lista de pontos críticos para exibição no mapa",
+    pontos: List[MapPointViewSchema] = Field(
+        ..., description="Lista de pontos criticos com snapshot de risco"
     )
-
-    atualizado_em: datetime = Field(
-        ...,
-        description="Timestamp da última atualização dos dados",
-        example="2026-01-07T06:30:00Z",
+    snapshot_timestamp: Optional[datetime] = Field(
+        None, description="Timestamp exato do snapshot usado na resposta"
     )
+    snapshot_valid_until: Optional[datetime] = Field(
+        None, description="Momento em que o snapshot deixa de ser considerado valido"
+    )
+    total: int = Field(..., description="Quantidade total de pontos retornados")

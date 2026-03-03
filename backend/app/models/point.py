@@ -1,88 +1,120 @@
 """
-point.py
+models/point.py
 
-Modelo de domínio para Pontos Críticos de Alagamento.
+Modelo ORM (SQLAlchemy) para Pontos Críticos de Alagamento.
 
-Este objeto representa um ponto físico monitorado no mapa,
-independente de fonte climática, IA ou persistência.
+Este modelo representa a FONTE DE VERDADE dos pontos críticos no backend:
+- Persistido em PostgreSQL
+- Usado pelo scheduler para calcular snapshots periódicos
+- Consumido pelo frontend para renderização do mapa
 
-Não é schema de API
-Não contém lógica de negócio complexa
+Notas:
+- Este arquivo contém APENAS a definição do modelo (sem regras de negócio).
 """
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from datetime import datetime
 from typing import Optional
+from sqlalchemy.orm import relationship
+
+from sqlalchemy import (
+    Boolean, 
+    DateTime, 
+    Float, 
+    Integer, 
+    String, 
+    Text, 
+    func, 
+    ForeignKey,)
+from sqlalchemy.orm import Mapped, mapped_column
+from backend.app.database import Base
 
 
-# ======================================================
-# VALOR-OBJETO
-# ======================================================
-
-@dataclass(frozen=True)
-class GeoLocation:
+class Point(Base):
     """
-    Representa uma coordenada geográfica.
+    Ponto crítico persistido no banco.
+
+    Convenções:
+    - id: identificador lógico (string) para manter compatibilidade com o CSV/legado (ex: "P_001", "grid_-16.695_-49.295")
+    - latitude/longitude: coordenadas do ponto
+    - active: permite desativar sem apagar histórico
+    - influence_radius_m: raio operacional 
     """
 
-    latitude: float
-    longitude: float
+    __tablename__ = "points"
 
+    # -----------------------
+    # Identificação
+    # -----------------------
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
 
-# ======================================================
-# ENTIDADE DE DOMÍNIO
-# ======================================================
+    municipality_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("municipalities.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
-@dataclass
-class CriticalPoint:
-    """
-    Representa um ponto crítico de alagamento monitorado.
-    """
+    # -----------------------
+    # Localização
+    # -----------------------
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
 
-    id: str
-    nome: str
-    localizacao: GeoLocation
-
+    # -----------------------
     # Metadados operacionais
-    ativo: bool = True
-    raio_influencia_m: int = 300
+    # -----------------------
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    influence_radius_m: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
 
-    # Classificação estática
-    bairro: Optional[str] = None
-    descricao: Optional[str] = None
+    # -----------------------
+    # Classificação/descrição
+    # -----------------------
+    neighborhood: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # ---------------------------------
-    # Helpers simples
-    # ---------------------------------
+    # -----------------------
+    # Auditoria
+    # -----------------------
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
-    def is_active(self) -> bool:
-        """
-        Indica se o ponto está ativo para monitoramento.
-        """
-        return self.ativo
+    risk_snapshots = relationship(
+        "RiskSnapshot",
+        back_populates="point",
+        cascade="all, delete-orphan",
+    )
 
+    municipality = relationship(
+        "Municipality",
+        backref="points",
+        lazy="joined",
+    )
+
+    # -----------------------
+    # Helpers simples (sem negócio)
+    # -----------------------
     def coordinates(self) -> tuple[float, float]:
-        """
-        Retorna coordenadas no formato (lat, lon).
-        """
-        return (self.localizacao.latitude, self.localizacao.longitude)
-    
+        return (self.latitude, self.longitude)
+
     def to_feature_payload(self) -> dict:
         """
-        Retorna uma dicionário básico com informações do ponto
-        para uso em builders de features ou serviços externos
+        Payload mínimo para serviços que constroem features ou chamam IA.
         """
         return {
             "id": self.id,
-            "latitude": self.localizacao.latitude,
-            "longitude": self.localizacao.longitude,
-            "influence_radius_m": self.raio_influencia_m,
-            "bairro": self.bairro,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "influence_radius_m": self.influence_radius_m,
+            "neighborhood": self.neighborhood,
         }
-
-
-# ======================================================
-# ALIAS DE COMPATIBILIDADE
-# ======================================================
-
-# Alias para integração com services e rotas
-Point = CriticalPoint

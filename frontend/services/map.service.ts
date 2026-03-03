@@ -1,99 +1,85 @@
 /**
  * map.service.ts
  *
- * Camada de serviço responsável por buscar os pontos críticos
- * com informações de risco no backend.
- *
- * Este módulo:
- * - NÃO contém lógica de UI
- * - NÃO conhece componentes React
- * - APENAS comunica com a API
+ * Camada de servico para endpoints de mapa e risco pontual.
  */
 
-import type { MapPointsResponse, RiskStatus } from "@domains/map/types";
+import type {
+  MapPointsResponse,
+  PointRiskSnapshotResponse,
+  RiskStatus,
+} from "@domains/map/types";
+import { API_BASE_URL } from "@services/api.config";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const MAP_POINTS_ENDPOINT = "/map/points";
-const POINT_RISK_ENDPOINT = "/points"
+const POINT_RISK_ENDPOINT = "/points";
+const DEFAULT_TIMEOUT_MS = 15000;
 
-/**
- * Busca os pontos críticos para renderização no mapa.
- *
- * @returns Lista de pontos críticos com risco (ou risco nulo)
- */
-export async function getMapPoints(): Promise<MapPointsResponse> {
+async function fetchJsonWithTimeout<T>(url: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000); // 15 segundos
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(
-      `${BASE_URL}${MAP_POINTS_ENDPOINT}?with_risk=false`, 
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        signal: controller.signal,
-      }
-    );
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      signal: controller.signal,
+    });
 
     if (!response.ok) {
-      throw new Error(
-        `Erro ao buscar pontos do mapa: ${response.status} ${response.statusText}`
-      );
+      throw new Error(`Erro HTTP ${response.status} ao acessar ${url}`);
     }
 
-    const data: MapPointsResponse = await response.json();
-
-    if (!data.pontos || !Array.isArray(data.pontos)) {
-      throw new Error("Resposta inválida do servidor: 'pontos' ausente ou inválido.");
-    }
-
-    if (import.meta.env.DEV) {
-      console.debug("[map.service] Pontos do mapa recebidos:", data.pontos);
-    }
-    return data;
+    return (await response.json()) as T;
   } finally {
     clearTimeout(timeout);
   }
-
 }
 
-  /**
-   * Busca o risco associado a um ponto específico.
-   */
+/**
+ * Busca os pontos criticos para renderizacao no mapa.
+ * Usa risco no proprio payload (snapshot atual).
+ */
+export async function getMapPoints(): Promise<MapPointsResponse> {
+  const data = await fetchJsonWithTimeout<MapPointsResponse>(
+    `${API_BASE_URL}${MAP_POINTS_ENDPOINT}?with_risk=true`
+  );
 
-export async function getPointRisk(pointId: string): Promise<RiskStatus> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000); // 15 segundos
-
-  try {
-    const response = await fetch(
-      `${BASE_URL}${POINT_RISK_ENDPOINT}/${pointId}/risk`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        signal: controller.signal,
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        `Erro ao buscar risco do ponto: ${pointId}: ${response.status}`
-      );
-    }
-
-    const raw = await response.json();
-
-    return {
-      icra: raw.icra,
-      nivel: raw.nivel,
-      confianca: raw.confianca,
-      cor: raw.cor,
-    };  
-  } finally {
-    clearTimeout(timeout);
+  if (!data || !Array.isArray(data.pontos)) {
+    throw new Error("Resposta invalida do servidor para /map/points.");
   }
+
+  if (typeof data.total !== "number") {
+    throw new Error("Resposta invalida do servidor: campo 'total' ausente.");
+  }
+
+  if (import.meta.env.DEV) {
+    console.debug("[map.service] Pontos do mapa recebidos:", {
+      total: data.total,
+      snapshot: data.snapshot_timestamp,
+    });
+  }
+
+  return data;
+}
+
+/**
+ * Busca o risco associado a um ponto especifico.
+ */
+export async function getPointRisk(pointId: string): Promise<RiskStatus> {
+  if (!pointId) {
+    throw new Error("pointId obrigatorio para getPointRisk.");
+  }
+
+  const raw = await fetchJsonWithTimeout<PointRiskSnapshotResponse>(
+    `${API_BASE_URL}${POINT_RISK_ENDPOINT}/${pointId}/risk`
+  );
+
+  if (!raw || !raw.point_id || !raw.nivel_risco) {
+    throw new Error("Resposta invalida do servidor para /points/{id}/risk.");
+  }
+
+  return raw;
 }

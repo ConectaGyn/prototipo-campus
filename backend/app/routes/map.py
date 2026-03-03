@@ -1,19 +1,28 @@
 """
 routes/map.py
 
-Rotas relacionadas à visualização geográfica dos pontos críticos.
-Responsável por fornecer dados prontos para renderização em mapas.
+Endpoint responsável por fornecer os pontos críticos
+com estado de risco consolidado via snapshot.
+
+Este módulo:
+- NÃO calcula risco
+- NÃO chama IA
+- NÃO consulta API climática
+- NÃO constrói features
 """
 
-from datetime import date, datetime
-from typing import List
+from typing import List, Dict, Optional
+from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
-from backend.app.schemas.point import PointResponse
-from backend.app.services.risk_orchestrator import RiskOrchestrator
-from backend.app.schemas.map import MapPointsResponse, MapPointSchema
-from backend.app.utils.time_utils import today_utc
+from backend.app.database import get_db
+from backend.app.models.point import Point
+from backend.app.models.municipality import Municipality
+from backend.app.repositories.risk_repository import RiskRepository
+from backend.app.schemas.map import MapPointsResponse, MapPointViewSchema
+from backend.app.services.risk_relative import compute_relative_levels_by_point
 from backend.app.settings import settings
 
 router = APIRouter(
@@ -21,89 +30,146 @@ router = APIRouter(
     tags=["Map"],
 )
 
-# Instância única do orquestrador
-risk_orchestrator = RiskOrchestrator()
 
+# =====================================================
+# ENDPOINT PRINCIPAL
+# =====================================================
 
 @router.get(
     "/points",
     response_model=MapPointsResponse,
     status_code=status.HTTP_200_OK,
-    summary="Pontos críticos com risco para visualização em mapa",
+    summary="Retorna pontos críticos com snapshot atual de risco",
     description=(
-        "Retorna os pontos críticos monitorados, para exibição no mapa."
-        "Por padrão, inclui o risco climático estimado pelo modelo ICRA."
-        "pode operar em modo sem risco para carregamento rápido de localização."
+        "Retorna todos os pontos críticos ativos com risco consolidado "
+        "a partir do snapshot mais recente (sem recalcular IA)."
     ),
 )
 def get_map_points(
     with_risk: bool = True,
+    only_active: bool = True,
+    municipality_id: Optional[int] = None,
+    db: Session = Depends(get_db),
 ):
     """
-    Endpoint principal de integração com o frontend de mapa.
-
-    - Carrega os pontos críticos
-    - Avalia o risco de cada ponto
-    - Retorna os dados consolidados
+    Fluxo:
+    1. Busca pontos no banco
+    2. Busca snapshot mais recente (bucket global)
+    3. Consolida resposta
+    4. Retorna payload leve
     """
+
     try:
-        target_date = today_utc()
-
-        points = risk_orchestrator.get_all_points()[: settings.MAP.MAX_POINTS]
-
-        map_points: List[MapPointSchema] = []
-        
-        for point in points:
-            if with_risk:
-                try:
-                    point_with_risk = risk_orchestrator.evaluate_point_risk(
-                        point=point,
-                        target_date=target_date,
-                    )
-                    
-                except Exception as err:
-                    print(f"[Map][RISK ERROR] Ponto {point.nome} ({point.id}): {err}")
-                    point_with_risk = MapPointSchema(
-                        ponto=PointResponse(
-                            id=point.id,
-                            nome=point.nome,
-                            localizacao={
-                                "latitude": point.localizacao.latitude,
-                                "longitude": point.localizacao.longitude,
-                            },
-                            ativo=point.ativo,
-                            raio_influencia_m=point.raio_influencia_m,
-                            bairro=point.bairro or None,
-                            descricao=point.descricao or None,
-                        ),
-                        risco_atual=None,
-                    )
-            else:
-                point_with_risk = MapPointSchema(
-                    ponto=PointResponse(
-                        id=point.id,
-                        nome=point.nome,
-                        localizacao={
-                            "latitude": point.localizacao.latitude,
-                            "longitude": point.localizacao.longitude,
-                        },
-                        ativo=point.ativo,
-                        raio_influencia_m=point.raio_influencia_m,
-                        bairro=point.bairro or None,
-                        descricao=point.descricao or None,
-                    ),
-                    risco_atual=None,
+        # -------------------------------------------------
+        # Buscar pontos
+        # -------------------------------------------------
+        if municipality_id is not None:
+            exists = (
+                db.query(Municipality.id)
+                .filter(
+                    Municipality.id == municipality_id,
+                    Municipality.active.is_(True),
+                )
+                .first()
+            )
+            if not exists:
+                raise HTTPException(
+                    status_code=404,
+                    detail="município não encontrado ou inativo"
                 )
             
-            map_points.append(point_with_risk)
+        query = db.query(Point)    
+
+        if only_active:
+            query = query.filter(Point.active.is_(True))
+
+        if municipality_id is not None:
+            query = query.filter(Point.municipality_id == municipality_id)
+
+        points: List[Point] = (
+            query
+            .order_by(Point.id.asc())
+            .limit(settings.MAP.MAX_POINTS)
+            .all()
+        )
+
+        # -------------------------------------------------
+        # Buscar snapshot mais recente global
+        # -------------------------------------------------
+
+        repository = RiskRepository(db)
+
+        snapshot_timestamp: Optional[datetime] = (
+            repository.get_latest_bucket_timestamp()
+        )
+
+        snapshots_by_point: Dict[str, object] = {}
+        relative_level_by_point: Dict[str, str] = {}
+
+        if with_risk and snapshot_timestamp:
+            snapshots = repository.get_snapshots_by_bucket(
+                snapshot_timestamp=snapshot_timestamp
+            )
+
+            snapshots_by_point = {
+                s.point_id: s for s in snapshots
+            }
+            relative_level_by_point = compute_relative_levels_by_point(snapshots)
+
+        # -------------------------------------------------
+        # Montar resposta
+        # -------------------------------------------------
+
+        response_points: List[MapPointViewSchema] = []
+
+        for p in points:
+            snapshot = snapshots_by_point.get(p.id)
+
+            response_points.append(
+                MapPointViewSchema(
+                    id=p.id,
+                    nome=p.name,
+                    latitude=p.latitude,
+                    longitude=p.longitude,
+                    bairro=p.neighborhood,
+                    raio_influencia_m=p.influence_radius_m,
+                    ativo=p.active,
+                    municipality_id=p.municipality_id,
+                    icra=snapshot.icra if snapshot else None,
+                    icra_std=snapshot.icra_std if snapshot else None,
+                    nivel_risco=snapshot.nivel_risco if snapshot else None,
+                    nivel_risco_relativo=(
+                        relative_level_by_point.get(p.id) if snapshot else None
+                    ),
+                    confianca=snapshot.confianca if snapshot else None,
+                    referencia_em=(
+                        snapshot.snapshot_timestamp
+                        if snapshot else None
+                    ),
+                )
+            )
+
+        # -------------------------------------------------
+        # Metadata snapshot
+        # -------------------------------------------------
+
+        snapshot_valid_until: Optional[datetime] = None
+
+        if snapshot_timestamp:
+            snapshot_valid_until = (
+                snapshot_timestamp +
+                timedelta(seconds=settings.RISK.SNAPSHOT_TTL_SECONDS)
+            )
 
         return MapPointsResponse(
-            pontos=map_points,
-            atualizado_em=datetime.utcnow().replace(tzinfo=None),
+            snapshot_timestamp=snapshot_timestamp,
+            snapshot_valid_until=snapshot_valid_until,
+            total=len(response_points),
+            pontos=response_points,
         )
 
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao gerar pontos do mapa: {e}",
+            detail=f"Erro ao consolidar dados do mapa: {e}",
         )
