@@ -48,6 +48,7 @@ const SensorCard: React.FC<SensorCardProps> = ({ sensor, onSelect }) => {
     }
 
     switch (riskLevel) {
+      case 'Muito Alto':
       case 'Alto':
         return {
           container: 'bg-white dark:bg-slate-800 border-red-200 dark:border-red-700/50',
