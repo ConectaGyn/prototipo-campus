@@ -2,193 +2,173 @@
 climate_service.py
 
 Serviço responsável por obter dados climáticos externos
-(Open-Meteo, OpenWeather, etc.) e normalizá-los para uso
-interno no backend.
+exclusivamente via Open-Meteo e normalizá-los para uso interno.
 
 Este módulo:
 - NÃO calcula risco
 - NÃO monta features
 - NÃO conhece IA
+- NÃO persiste dados
 
-Ele apenas fornece dados climáticos confiáveis.
+Ele apenas fornece séries climáticas confiáveis.
 """
 
-from typing import Dict, Optional
 from datetime import date
+from typing import List, Dict
 
 import requests
 
 from backend.app.settings import settings
-from backend.app.utils.time_utils import today_utc
 
 
-# ================================
+# =====================================================
 # EXCEÇÕES
-# ================================
+# =====================================================
 
 class ClimateServiceError(Exception):
-    """Erro genérico ao obter dados climáticos."""
+    """Erro ao obter dados climáticos externos."""
 
 
-# ================================
+# =====================================================
 # SERVIÇO PRINCIPAL
-# ================================
+# =====================================================
 
 class ClimateService:
     """
-    Serviço de integração com provedores climáticos.
+    Serviço de integração com Open-Meteo.
+
+    Fornece séries diárias agregadas para uso
+    no cálculo de features e risco.
     """
 
-    def __init__(self):
-        self.primary_provider = settings.CLIMATE.PRIMARY_PROVIDER
-        self.daily_cache: dict = {}
-        self._max_cache_size = 1000
+    def __init__(self) -> None:
+        self.base_archive_url = "https://archive-api.open-meteo.com/v1/archive"
+        self.base_forecast_url = "https://api.open-meteo.com/v1/forecast"
+        self.timeout = settings.CLIMATE.CLIMATE_TIMEOUT_SECONDS
+
+        self._session = requests.Session()
 
     # -------------------------------------------------
     # API PÚBLICA
     # -------------------------------------------------
 
-    def get_daily_climate(
+    def get_daily_series(
         self,
         latitude: float,
         longitude: float,
-        target_date: Optional[date] = None,
-    ) -> Dict[str, float]:
+        start_date: date,
+        end_date: date,
+    ) -> List[Dict]:
         """
-        Retorna dados climáticos agregados para um dia específico.
+        Retorna série diária agregada entre start_date e end_date.
 
         Parâmetros
         ----------
         latitude : float
         longitude : float
-        target_date : date, opcional
-            Data de referência (default: hoje UTC)
+        start_date : date
+        end_date : date
 
         Retorno
         -------
-        dict
-            Dados climáticos normalizados
+        List[Dict]
+            Lista de registros normalizados por dia.
         """
 
-        if target_date is None:
-            target_date = today_utc()
+        if start_date > end_date:
+            raise ClimateServiceError("start_date não pode ser maior que end_date")
 
-        if self.primary_provider == "open_meteo":
-            return self._fetch_open_meteo_daily(latitude, longitude, target_date)
+        url = self._select_endpoint(end_date)
 
-        if self.primary_provider == "open_weather":
-            return self._fetch_open_weather_daily(latitude, longitude, target_date)
+        params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "daily": "precipitation_sum,temperature_2m_mean,apparent_temperature_mean",
+            "timezone": "UTC",
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        }
 
-        raise ClimateServiceError(
-            f"Provedor climático não suportado: {self.primary_provider}"
-        )
+        max_retries = settings.CLIMATE.CLIMATE_MAX_RETRIES
 
+        for attempt in range(max_retries + 1):
+            try:
+                response = self._session.get(
+                    url,
+                    params=params,
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                break
+
+            except requests.RequestException as e:
+                if attempt == max_retries:
+                    raise ClimateServiceError(
+                        f"Open-Meteo Indisponível após {max_retries} tentativas: {repr(e)}"
+                    ) from e
+
+                backoff = 2 ** attempt
+                import time
+                time.sleep(backoff)
+
+        return self._normalize_daily_response(payload)
     # -------------------------------------------------
-    # PROVEDORES
+    # AUXILIARES
     # -------------------------------------------------
 
-    def _fetch_open_meteo_daily(
-        self,
-        latitude: float,
-        longitude: float,
-        target_date: date,
-    ) -> Dict[str, float]:
+    def _select_endpoint(self, reference_date: date) -> str:
         """
-        Busca dados diários no Open-Meteo.
+        Seleciona endpoint apropriado:
+        - Archive para datas passadas
+        - Forecast para hoje/futuro
         """
+        today = date.today()
 
-        try:
-            cache_key = (latitude, longitude, target_date.isoformat())
+        if reference_date < today:
+            return self.base_archive_url
 
-            if cache_key in self.daily_cache:
-                return self.daily_cache[cache_key]
+        return self.base_forecast_url
 
-            today = today_utc()
-
-            if  target_date < today:
-                url = "https://archive-api.open-meteo.com/v1/archive"
-            else:
-                url = "https://api.open-meteo.com/v1/forecast"
-
-            params = {
-                "latitude": latitude,
-                "longitude": longitude,
-                "daily": "precipitation_sum,temperature_2m_mean,apparent_temperature_mean",
-                "timezone": "UTC",
-                "start_date": target_date.isoformat(),
-                "end_date": target_date.isoformat(),
-            }
-
-            timeout = getattr(settings.CLIMATE, "TIMEOUT", 15)
-
-            response = requests.get(url, params=params, timeout=timeout)
-            response.raise_for_status()
-
-            data = response.json()
-
-            result = {
-                "precipitacao_total_mm": data["daily"]["precipitation_sum"][0],
-                "temperatura_media_2m_C": data["daily"]["temperature_2m_mean"][0],
-                "temperatura_aparente_media_2m_C": data["daily"][
-                    "apparent_temperature_mean"
-                ][0],
-            }
-
-            if len(self.daily_cache) >= self._max_cache_size:
-                self.daily_cache.clear()
-
-            self.daily_cache[cache_key] = result
-            return result
-
-        except Exception as e:
-            print(f"[CLIMATE][ERRO] {latitude}, {longitude} ({target_date}): {e}")
-            return {
-                "precipitacao_total_mm": 0.0,
-                "temperatura_media_2m_C": 0.0,
-                "temperatura_aparente_media_2m_C": 0.0,
-            }
-
-    def _fetch_open_weather_daily(
-        self,
-        latitude: float,
-        longitude: float,
-        target_date: date,
-    ) -> Dict[str, float]:
+    def _normalize_daily_response(self, payload: Dict) -> List[Dict]:
         """
-        Fallback usando Open-Meteo quando OpenWeather não está disponível.
+        Normaliza estrutura retornada pela Open-Meteo.
         """
 
-        try:
-            today = today_utc()
+        if "daily" not in payload:
+            raise ClimateServiceError("Resposta inválida da Open-Meteo")
 
-            if  target_date < today:
-                url = "https://archive-api.open-meteo.com/v1/archive"
-            else:
-                url = "https://api.open-meteo.com/v1/forecast"
+        daily = payload["daily"]
 
-            params = {
-                "lat": latitude,
-                "lon": longitude,
-                "daily": "precipitation_sum,temperature_2m_mean,apparent_temperature_mean",
-                "timezone": "UTC",
-                "start_date": target_date.isoformat(),
-                "end_date": target_date.isoformat(),
-            }
+        required_keys = [
+            "time",
+            "precipitation_sum",
+            "temperature_2m_mean",
+            "apparent_temperature_mean",
+        ]
 
-            timeout = getattr(settings.CLIMATE, "TIMEOUT", 15)
+        for key in required_keys:
+            if key not in daily:
+                raise ClimateServiceError(
+                    f"Campo ausente na resposta Open-Meteo: {key}"
+                )
 
-            response = requests.get(url, params=params, timeout=timeout)
-            response.raise_for_status()
+        series = []
 
-            data = response.json()
-
-            return {
-                "precipitacao_total_mm": data["daily"]["precipitation_sum"][0],
-                "temperatura_media_2m_C": data["daily"]["temperature_2m_mean"][0],
-                "temperatura_aparente_media_2m_C": data["daily"]["apparent_temperature_mean"][0],
-            }
-
-        except Exception as e:
-            raise ClimateServiceError(
-                f"Erro ao obter dados do OpenWeather: {e}"
+        for i in range(len(daily["time"])):
+            series.append(
+                {
+                    "date": date.fromisoformat(daily["time"][i]),
+                    "precipitacao_total_mm": float(
+                        daily["precipitation_sum"][i] or 0.0
+                    ),
+                    "temperatura_media_2m_C": float(
+                        daily["temperature_2m_mean"][i] or 0.0
+                    ),
+                    "temperatura_aparente_media_2m_C": float(
+                        daily["apparent_temperature_mean"][i] or 0.0
+                    ),
+                }
             )
+
+        return series
