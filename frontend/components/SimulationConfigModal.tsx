@@ -106,7 +106,7 @@ const SimulationConfigModal: React.FC<SimulationConfigModalProps> = ({
     const now = Date.now();
     const updatedOverrides: Record<string, SimulationOverride> = {};
 
-    Object.entries(localOverrides).forEach(([id, override]) => {
+    Object.entries(localOverrides as Record<string, SimulationOverride>).forEach(([id, override]) => {
       if (override.intensity !== 'Normal') {
         updatedOverrides[id] = {
           ...override,
