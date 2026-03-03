@@ -1,72 +1,104 @@
 """
-point.py
+schemas/point.py
 
-Schemas de API relacionados aos Pontos Críticos de Alagamento.
+Contratos públicos da API relacionados aos Pontos Críticos
+e seus respectivos estados de risco.
 
-Responsável apenas por definir contratos de entrada e saída
-da API. Não contém lógica de domínio.
+Responsabilidade:
+- Definir entrada e saída da API
+- Refletir modelos ORM (Point, RiskSnapshot)
+- Não conter lógica de negócio
 """
 
-from typing import Optional, List
-from pydantic import BaseModel, Field
+from typing import List, Optional
+from datetime import datetime
+from pydantic import BaseModel, Field, ConfigDict
 
 
-# ================================
-# SCHEMAS BÁSICOS
-# ================================
+# =====================================================
+# SCHEMAS BASE
+# =====================================================
 
-class GeoLocationSchema(BaseModel):
+class PointBaseSchema(BaseModel):
     """
-    Coordenadas geográficas de um ponto.
+    Campos estruturais de um ponto crítico.
+    Reflete diretamente o modelo ORM.
     """
 
+    name: str = Field(..., description="Nome do ponto crítico")
     latitude: float = Field(..., description="Latitude do ponto")
     longitude: float = Field(..., description="Longitude do ponto")
 
+    active: bool = Field(
+        default=True,
+        description="Indica se o ponto está ativo para monitoramento",
+    )
 
-# ================================
+    influence_radius_m: int = Field(
+        default=300,
+        description="Raio de influência do ponto em metros",
+    )
+
+    neighborhood: Optional[str] = Field(
+        default=None,
+        description="Bairro ou região administrativa do ponto",
+    )
+
+    description: Optional[str] = Field(
+        default=None,
+        description="Descrição adicional do ponto",
+    )
+
+
+# =====================================================
+# SCHEMAS DE ENTRADA
+# =====================================================
+
+class PointCreateSchema(PointBaseSchema):
+    """
+    Schema para criação de novos pontos críticos.
+    """
+    pass
+
+
+class PointUpdateSchema(BaseModel):
+    """
+    Schema para atualização parcial de um ponto crítico.
+    Todos os campos são opcionais.
+    """
+
+    name: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    active: Optional[bool] = None
+    influence_radius_m: Optional[int] = None
+    neighborhood: Optional[str] = None
+    description: Optional[str] = None
+
+
+# =====================================================
 # SCHEMAS DE SAÍDA
-# ================================
+# =====================================================
 
-class PointResponse(BaseModel):
+class PointResponse(PointBaseSchema):
     """
     Representação pública de um ponto crítico.
     """
 
     id: str = Field(..., description="Identificador único do ponto")
-    nome: str = Field(..., description="Nome do ponto crítico")
 
-    localizacao: GeoLocationSchema = Field(
-        ..., description="Coordenadas geográficas do ponto"
+    municipality_id: Optional[int] = Field(
+        default=None,
+        description="ID do município associado ao ponto",
     )
-
-    ativo: bool = Field(
-        True,
-        description="Indica se o ponto está ativo para monitoramento"
+    created_at: datetime = Field(
+        ..., description="Timestamp de criação do ponto"
     )
-
-    raio_influencia_m: int = Field(
-        300,
-        description="Raio de influência do ponto em metros"
+    updated_at: datetime = Field(
+        ..., description="Timestamp da última atualização do ponto"
     )
+    model_config = ConfigDict(from_attributes=True)
 
-    bairro: Optional[str] = Field(
-        None,
-        description="Bairro ou região do ponto"
-    )
-
-    descricao: Optional[str] = Field(
-        None,
-        description="Descrição adicional do ponto"
-    )
-
-    class Config:
-        orm_mode = True
-
-
-# ================================
-# SCHEMAS DE LISTAGEM
-# ================================
 
 class PointListResponse(BaseModel):
     """
@@ -74,33 +106,62 @@ class PointListResponse(BaseModel):
     """
 
     total: int = Field(..., description="Total de pontos retornados")
-    pontos: List[PointResponse]
+    items: List[PointResponse]
 
-# ================================
+
+# =====================================================
 # SCHEMA DE RISCO POR PONTO
-# ================================
+# =====================================================
 
-class PointRiskSchema(BaseModel):
+class PointRiskResponse(BaseModel):
     """
-    Resposta do cálculo de risco para um ponto específico.
+    Estado de risco associado a um ponto específico.
 
-    Utilizado  pelo endpoint:
-    GET /map/points/{point_id}/risk
+    Utilizado por:
+    - GET /points/{point_id}/risk
+    - Map rendering
     """
+
+    point_id: str = Field(..., description="ID do ponto crítico")
+
+    reference_timestamp: datetime = Field(
+        ..., description="Timestamp exato da avaliação do risco"
+    )
 
     icra: float = Field(
-        ...,
-        description="Índice Climático de Risco de Alagamento (ICRA)",
+        ..., description="Índice Climático de Risco de Alagamento"
     )
-    nivel: str = Field(
-        ...,
-        description="Nível risco calculado (Baixo, Moderado, Alto, Muito Alto)",
+
+    icra_std: Optional[float] = Field(
+        default=None,
+        description="Desvio padrão do ICRA (incerteza do modelo)",
     )
-    confianca: str = Field(
-        ...,
-        description="Grau de confiança do modelo da inferência",
+
+    risk_level: str = Field(
+        ..., description="Nível de risco (Baixo, Moderado, Alto, Muito Alto)"
     )
-    cor: str = Field(
-        ...,
-        description="Cor associada ao nível de risco",
+
+    confidence: str = Field(
+        ..., description="Confiança do modelo na inferência"
     )
+
+    expires_at: Optional[datetime] = Field(
+        default=None,
+        description="Timestamp de validade do risco (se aplicável)",
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =====================================================
+# SCHEMA COMBINADO (PONTO + RISCO)
+# =====================================================
+
+class PointWithRiskResponse(BaseModel):
+    """
+    Representação combinada utilizada para mapas
+    e dashboards operacionais.
+    """
+
+    point: PointResponse
+    risk: Optional[PointRiskResponse] = None
