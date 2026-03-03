@@ -1,11 +1,14 @@
-import React, { useEffect, useRef } from 'react';
-import type { SensorData } from '../types.ts';
-import { getWeatherData, getLocationName } from '../services/weather/openWeather.service.ts';
-import { on } from 'events';
+import React, { useEffect, useRef } from "react";
+import type { SensorData } from "../types.ts";
+import {
+  getWeatherData,
+  getLocationName,
+} from "../services/weather/openWeather.service.ts";
+import type { SurfaceEnvelope } from "../domains/surface/types.ts";
 
 declare const L: any;
 
-type RouteStopType = 'start' | 'via' | 'destination';
+type RouteStopType = "start" | "via" | "destination";
 
 interface RouteStop {
   coords: { lat: number; lon: number };
@@ -20,47 +23,48 @@ interface MapComponentProps {
   routePath?: { lat: number; lon: number }[];
   routeStops?: RouteStop[];
   highlightedSensors?: SensorData[];
-  onRiskCalculated?: (sensorId: string, risk: any) => void;
+  surface?: SurfaceEnvelope | null;
+  municipalityGeoJson?: Record<string, unknown> | null;
 }
 
 const MapComponent: React.FC<MapComponentProps> = ({
   sensors,
   className,
   userLocation,
-  routePath,
-  routeStops,
-  highlightedSensors,
-  onRiskCalculated,
+  surface,
+  municipalityGeoJson,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const mapInitRef = useRef(false);
 
   const markerByIdRef = useRef<Record<string, any>>({});
-  const riskCacheRef = useRef<Record<string, any>>({});
   const tempMarkerRef = useRef<any>(null);
   const userMarkerRef = useRef<any>(null);
+  const mapClickHandlerRef = useRef<((e: any) => void) | null>(null);
 
-  /* =======================
-     ICON HELPERS
-  ======================= */
+  const surfaceLayerRef = useRef<any>(null);
+  const municipalityLayerRef = useRef<any>(null);
+  const municipalityBoundsRef = useRef<any>(null);
+  const hasAutoFittedRef = useRef(false);
+  const surfaceRangeRef = useRef<{ min: number; max: number } | null>(null);
 
-  const getMarkerIcon = (level: string) => {
-    let color = 'bg-slate-400';
-    let pulse = '';
+  const getMarkerIcon = (level?: string | null) => {
+    let color = "bg-slate-400";
+    let pulse = "";
 
-    if (level === 'Alto') {
-      color = 'bg-red-600';
+    if (level === "Alto" || level === "Muito Alto") {
+      color = "bg-red-600";
       pulse =
         '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>';
-    } else if (level === 'Moderado') {
-      color = 'bg-yellow-500';
-    } else if (level === 'Baixo') {
-      color = 'bg-green-500';
+    } else if (level === "Moderado") {
+      color = "bg-yellow-500";
+    } else if (level === "Baixo") {
+      color = "bg-green-500";
     }
 
     return L.divIcon({
-      className: 'bg-transparent border-none',
+      className: "bg-transparent border-none",
       html: `
         <div class="relative flex items-center justify-center w-6 h-6">
           ${pulse}
@@ -75,7 +79,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
   const getUserIcon = () =>
     L.divIcon({
-      className: 'bg-transparent border-none',
+      className: "bg-transparent border-none",
       html: `
         <div class="relative flex items-center justify-center w-6 h-6">
           <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-300 opacity-50"></span>
@@ -88,7 +92,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
   const getTempIcon = () =>
     L.divIcon({
-      className: 'bg-transparent border-none',
+      className: "bg-transparent border-none",
       html: `
         <div class="relative flex items-center justify-center w-5 h-5">
           <span class="relative inline-flex rounded-full h-4 w-4 bg-slate-500 border-2 border-white shadow-lg"></span>
@@ -98,151 +102,311 @@ const MapComponent: React.FC<MapComponentProps> = ({
       iconAnchor: [12, 12],
     });
 
-  /* =======================
-     POPUP HELPERS
-  ======================= */
+  const getFeatureIcra = (feature: any): number => {
+    const relativeRaw = feature?.properties?.risk_value_relative;
+    if (relativeRaw !== undefined && relativeRaw !== null) {
+      const rel = Number(relativeRaw);
+      if (Number.isFinite(rel)) {
+        return Math.max(0, Math.min(1, rel));
+      }
+    }
 
-  const popupLoading = (label: string) => `
-    <div class="flex items-center gap-2 p-2">
-      <div class="w-4 h-4 border-2 border-cyan-600 border-t-transparent rounded-full animate-spin"></div>
-      <span class="text-sm font-semibold text-slate-600">${label}</span>
-    </div>
-  `;
+    const raw = feature?.properties?.icra ?? feature?.properties?.risk_value ?? 0;
+    const v = Number(raw);
+    if (!Number.isFinite(v)) return 0;
 
-  const popupWeatherOnly = (title: string, weather: any) => `
-    <div class="font-sans p-2 min-w-[200px]">
-      <h3 class="font-bold text-base border-b pb-1 mb-2">${title}</h3>
-      <div class="text-sm">
-        Temperatura: ${weather.current.temp}°C<br/>
-        Umidade: ${weather.current.humidity}%<br/>
-        Vento: ${weather.current.wind_speed} km/h
-      </div>
-    </div>
-  `;
+    const range = surfaceRangeRef.current;
+    if (range && range.max > range.min) {
+      const normalized = (v - range.min) / (range.max - range.min);
+      return Math.max(0, Math.min(1, normalized));
+    }
 
-  const popupWeatherWithRisk = (title: string, weather: any, risk: any) => `
-    <div class="font-sans p-2 min-w-[200px]">
-      <h3 class="font-bold text-base border-b pb-1 mb-2">${title}</h3>
-      <div class="text-sm">
-        Temperatura: ${weather.current.temp}°C<br/>
-        Umidade: ${weather.current.humidity}%<br/>
-        Vento: ${weather.current.wind_speed} km/h
-      </div>
-      <div class="mt-3 pt-2 border-t text-center font-bold">
-        Risco ${risk.nivel}
-      </div>
-      <div class="text-xs text-center text-slate-500">
-        Confiança: ${risk.confianca ?? '—'}
-      </div>
-    </div>
-  `;
+    return Math.max(0, Math.min(1, v));
+  };
 
-  /* =======================
-     MAP INIT + CLICK LIVRE
-  ======================= */
+  const colorFromIcra = (icra: number): string => {
+    if (icra >= 0.85) return "#991b1b";
+    if (icra >= 0.7) return "#dc2626";
+    if (icra >= 0.5) return "#f59e0b";
+    if (icra >= 0.3) return "#84cc16";
+    return "#22c55e";
+  };
+
+  const surfaceStyle = (feature: any) => {
+    const icra = getFeatureIcra(feature);
+    const fill = feature?.properties?.color ?? colorFromIcra(icra);
+    return {
+      color: "transparent",
+      weight: 0,
+      fillColor: fill,
+      fillOpacity: 0.55,
+      interactive: false,
+    };
+  };
 
   useEffect(() => {
     if (!mapContainerRef.current || mapInitRef.current) return;
 
-    mapRef.current = L.map(mapContainerRef.current, {
+    const map = L.map(mapContainerRef.current, {
       attributionControl: false,
       zoomControl: true,
       tap: false,
+      preferCanvas: true,
     }).setView([-16.6869, -49.2648], 12);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapRef.current);
-    mapRef.current.keyboard.disable();
+    map.createPane("surfacePane");
+    map.getPane("surfacePane").style.zIndex = 200;
 
-    mapRef.current.on('click', async (e: any) => {
+    map.createPane("municipalityPane");
+    map.getPane("municipalityPane").style.zIndex = 300;
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+    map.keyboard.disable();
+
+    const onMapClick = async (e: any) => {
+      if (!mapRef.current) return;
+
       if (tempMarkerRef.current) {
         tempMarkerRef.current.remove();
-        tempMarkerRef.current = null;
       }
 
       const marker = L.marker([e.latlng.lat, e.latlng.lng], {
         icon: getTempIcon(),
         zIndexOffset: 700,
-      }).addTo(mapRef.current);
+      }).addTo(map);
 
       tempMarkerRef.current = marker;
-      marker.bindPopup(popupLoading('Buscando clima...')).openPopup();
+      marker.bindPopup("Buscando clima...").openPopup();
 
       try {
         const weather = await getWeatherData(e.latlng.lat, e.latlng.lng);
         const location = await getLocationName(e.latlng.lat, e.latlng.lng);
-        marker.setPopupContent(popupWeatherOnly(location, weather));
+
+        if (!mapRef.current || tempMarkerRef.current !== marker) return;
+
+        marker.setPopupContent(`
+          <div class="p-2">
+            <strong>${location}</strong><br/>
+            Temp: ${weather.current.temp}°C<br/>
+            Umidade: ${weather.current.humidity}%<br/>
+            Vento: ${weather.current.wind_speed} km/h
+          </div>
+        `);
       } catch {
-        marker.setPopupContent('<div class="p-2 text-red-600">Erro ao buscar clima</div>');
+        if (!mapRef.current || tempMarkerRef.current !== marker) return;
+        marker.setPopupContent("Erro ao buscar clima");
       }
-    });
+    };
 
+    map.on("click", onMapClick);
+    mapClickHandlerRef.current = onMapClick;
+    mapRef.current = map;
     mapInitRef.current = true;
-  }, []);
 
-  /* =======================
-     SENSORS / MARKERS
-  ======================= */
+    return () => {
+      if (!mapRef.current) return;
+
+      if (mapClickHandlerRef.current) {
+        mapRef.current.off("click", mapClickHandlerRef.current);
+      }
+
+      if (surfaceLayerRef.current) {
+        surfaceLayerRef.current.remove();
+        surfaceLayerRef.current = null;
+      }
+
+      if (municipalityLayerRef.current) {
+        municipalityLayerRef.current.remove();
+        municipalityLayerRef.current = null;
+      }
+
+      if (tempMarkerRef.current) {
+        tempMarkerRef.current.remove();
+        tempMarkerRef.current = null;
+      }
+
+      if (userMarkerRef.current) {
+        userMarkerRef.current.remove();
+        userMarkerRef.current = null;
+      }
+
+      Object.values(markerByIdRef.current as Record<string, any>).forEach(
+        (marker: any) => marker.remove()
+      );
+      markerByIdRef.current = {};
+
+      mapRef.current.remove();
+      mapRef.current = null;
+      mapInitRef.current = false;
+      mapClickHandlerRef.current = null;
+      municipalityBoundsRef.current = null;
+      hasAutoFittedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!mapRef.current) return;
 
-    sensors.forEach(sensor => {
+    if (surfaceLayerRef.current) {
+      surfaceLayerRef.current.remove();
+      surfaceLayerRef.current = null;
+    }
+
+    if (!surface?.geojson) return;
+
+    const risks = (surface.geojson.features || [])
+      .map((f: any) => Number(f?.properties?.risk_value))
+      .filter((v: number) => Number.isFinite(v));
+
+    if (risks.length > 0) {
+      surfaceRangeRef.current = {
+        min: Math.min(...risks),
+        max: Math.max(...risks),
+      };
+    } else {
+      surfaceRangeRef.current = null;
+    }
+
+    const layer = L.geoJSON(surface.geojson, {
+      pane: "surfacePane",
+      style: surfaceStyle,
+      interactive: false,
+    });
+
+    layer.addTo(mapRef.current);
+    surfaceLayerRef.current = layer;
+  }, [surface]);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    if (municipalityLayerRef.current) {
+      municipalityLayerRef.current.remove();
+      municipalityLayerRef.current = null;
+    }
+
+    if (!municipalityGeoJson) return;
+
+    const boundsLayer = L.geoJSON(municipalityGeoJson);
+    municipalityBoundsRef.current = boundsLayer.getBounds();
+
+    const outer = L.geoJSON(municipalityGeoJson, {
+      pane: "municipalityPane",
+      style: () => ({
+        color: "#0f172a",
+        weight: 6,
+        opacity: 0.8,
+        fillOpacity: 0,
+      }),
+      interactive: false,
+    });
+
+    const inner = L.geoJSON(municipalityGeoJson, {
+      pane: "municipalityPane",
+      style: () => ({
+        color: "#22d3ee",
+        weight: 3,
+        opacity: 1,
+        fillOpacity: 0,
+      }),
+      interactive: false,
+    });
+
+    const layer = L.layerGroup([outer, inner]);
+    layer.addTo(mapRef.current);
+    municipalityLayerRef.current = layer;
+  }, [municipalityGeoJson]);
+
+  useEffect(() => {
+    if (!mapRef.current || hasAutoFittedRef.current) return;
+
+    let targetBounds: any = null;
+
+    if (municipalityBoundsRef.current && municipalityBoundsRef.current.isValid()) {
+      targetBounds = municipalityBoundsRef.current;
+    }
+
+    if (sensors.length > 0) {
+      const sensorBounds = L.latLngBounds(
+        sensors.map((sensor) => [sensor.coords.lat, sensor.coords.lon])
+      );
+
+      if (sensorBounds.isValid()) {
+        if (!targetBounds) {
+          targetBounds = sensorBounds;
+        } else {
+          targetBounds = targetBounds.extend(sensorBounds);
+        }
+      }
+    }
+
+    if (!targetBounds || !targetBounds.isValid()) return;
+
+    mapRef.current.fitBounds(targetBounds.pad(0.04), {
+      padding: [28, 28],
+      animate: false,
+      maxZoom: 13,
+    });
+
+    hasAutoFittedRef.current = true;
+  }, [sensors, municipalityGeoJson]);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const nextSensorIds = new Set(sensors.map((s) => s.id));
+
+    Object.entries(markerByIdRef.current as Record<string, any>).forEach(([id, marker]) => {
+      if (!nextSensorIds.has(id)) {
+        (marker as any).remove();
+        delete markerByIdRef.current[id];
+      }
+    });
+
+    sensors.forEach((sensor) => {
       let marker = markerByIdRef.current[sensor.id];
+      const icon = getMarkerIcon(sensor.alert?.level);
 
       if (!marker) {
         marker = L.marker([sensor.coords.lat, sensor.coords.lon], {
-          icon: getMarkerIcon('Nenhum'),
+          icon,
           zIndexOffset: 800,
-          interactive: true,
         }).addTo(mapRef.current);
-
         markerByIdRef.current[sensor.id] = marker;
+      } else {
+        marker.setLatLng([sensor.coords.lat, sensor.coords.lon]);
+        marker.setIcon(icon);
       }
 
-      marker.off('click');
-      marker.on('click', async (evt: any) => {
+      marker.off("click");
+
+      marker.on("click", async (evt: any) => {
         L.DomEvent.stop(evt);
-
-        if (tempMarkerRef.current) {
-          tempMarkerRef.current.remove();
-          tempMarkerRef.current = null;
-        }
-
-        marker.bindPopup(popupLoading('Carregando informações...')).openPopup();
+        marker.bindPopup("Carregando clima...").openPopup();
 
         try {
           const weather = await getWeatherData(sensor.coords.lat, sensor.coords.lon);
 
-          const cached = riskCacheRef.current[sensor.id];
-          if (cached) {
-            marker.setIcon(getMarkerIcon(cached.nivel));
-            marker.setPopupContent(popupWeatherWithRisk(sensor.location, weather, cached));
-            return;
-          }
+          if (!mapRef.current || markerByIdRef.current[sensor.id] !== marker) return;
 
-          const res = await fetch(
-            `${import.meta.env.VITE_API_BASE_URL}/points/${sensor.id}/risk`
-          );
-
-          if (res.ok) {
-            const risk = await res.json();
-            riskCacheRef.current[sensor.id] = risk;
-            marker.setIcon(getMarkerIcon(risk.nivel));
-            marker.setPopupContent(popupWeatherWithRisk(sensor.location, weather, risk));
-            onRiskCalculated?.(sensor.id, risk);
-          } else {
-            marker.setPopupContent(popupWeatherOnly(sensor.location, weather));
-          }
+          marker.setPopupContent(`
+            <div class="p-2">
+              <strong>${sensor.location}</strong><br/>
+              Temp: ${weather.current.temp}°C<br/>
+              Umidade: ${weather.current.humidity}%<br/>
+              Vento: ${weather.current.wind_speed} km/h
+              <hr class="my-2"/>
+              <strong>Risco:</strong> ${sensor.alert?.level ?? "Indisponivel"}<br/>
+              Confianca: ${sensor.alert?.confianca ?? "-"}
+            </div>
+          `);
         } catch {
-          marker.setPopupContent('<div class="p-2 text-red-600">Erro ao carregar dados</div>');
+          if (!mapRef.current || markerByIdRef.current[sensor.id] !== marker) return;
+          marker.setPopupContent("Erro ao carregar dados.");
         }
       });
     });
   }, [sensors]);
-
-  /* =======================
-     USER LOCATION
-  ======================= */
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -252,24 +416,57 @@ const MapComponent: React.FC<MapComponentProps> = ({
       userMarkerRef.current = null;
     }
 
-    if (userLocation) {
-      userMarkerRef.current = L.marker(
-        [userLocation.lat, userLocation.lon],
-        { icon: getUserIcon(), zIndexOffset: 1000 }
-      ).addTo(mapRef.current);
-    }
-  }, [userLocation]);
+    if (!userLocation) return;
 
-  /* =======================
-     RENDER
-  ======================= */
+    userMarkerRef.current = L.marker([userLocation.lat, userLocation.lon], {
+      icon: getUserIcon(),
+      zIndexOffset: 1000,
+    }).addTo(mapRef.current);
+  }, [userLocation]);
 
   return (
     <div className="relative h-full w-full">
       <div
         ref={mapContainerRef}
-        className={className || 'h-[420px] md:h-[520px] w-full rounded-2xl shadow-md'}
+        className={className || "h-[420px] md:h-[520px] w-full rounded-2xl shadow-md"}
       />
+      <aside
+        className="pointer-events-none absolute bottom-3 left-3 z-[1000] w-56 rounded-xl border border-slate-200/80 bg-white/90 p-3 shadow-lg backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/85"
+        aria-label="Legenda do mapa de calor"
+      >
+        <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+          Legenda do Mapa de Calor
+        </p>
+        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+          Escala relativa de risco territorial
+        </p>
+
+        <div className="mt-2 h-2 w-full rounded-full bg-gradient-to-r from-[#22c55e] via-[#f59e0b] to-[#991b1b]" />
+        <div className="mt-1 flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
+          <span>Baixo</span>
+          <span>Moderado</span>
+          <span>Muito Alto</span>
+        </div>
+
+        <div className="mt-2 space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#22c55e]" />
+            <span>Menor risco relativo</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#f59e0b]" />
+            <span>Risco intermediario</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#991b1b]" />
+            <span>Maior risco relativo</span>
+          </div>
+        </div>
+
+        <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">
+          Use a aba Analises para leitura institucional em escala absoluta.
+        </p>
+      </aside>
     </div>
   );
 };
