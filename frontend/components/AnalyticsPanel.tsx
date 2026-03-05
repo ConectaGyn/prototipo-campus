@@ -31,7 +31,8 @@ interface SurfaceDiagnostics {
   relExposure70: number;
 }
 
-const DEFAULT_LIMIT = 30;
+const DEFAULT_LIMIT = 12;
+const ANALYTICS_TIMEOUT_MS = 45000;
 
 function toPct(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
@@ -117,7 +118,7 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ municipalityId }) => {
   const [error, setError] = useState<string | null>(null);
 
   const [limit, setLimit] = useState<number>(DEFAULT_LIMIT);
-  const [threshold, setThreshold] = useState<string>('default');
+  const [threshold, setThreshold] = useState<string>('0.10');
 
   const numericThreshold = useMemo(() => {
     if (threshold === 'default') return undefined;
@@ -130,20 +131,43 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ municipalityId }) => {
     setError(null);
 
     try {
-      const [current, history, currentSurface] = await Promise.all([
+      const [currentResult, historyResult, surfaceResult] = await Promise.allSettled([
         getMunicipalityMetrics(municipalityId, {
           highRiskThreshold: numericThreshold,
+          timeoutMs: ANALYTICS_TIMEOUT_MS,
         }),
         getMunicipalityMetricsSeries(municipalityId, {
           limit,
           highRiskThreshold: numericThreshold,
+          timeoutMs: ANALYTICS_TIMEOUT_MS,
         }),
         getSurface(municipalityId),
       ]);
 
-      setMetrics(current);
-      setSeries(history);
-      setSurface(currentSurface);
+      if (currentResult.status !== 'fulfilled') {
+        throw currentResult.reason;
+      }
+
+      setMetrics(currentResult.value);
+
+      if (historyResult.status === 'fulfilled') {
+        setSeries(historyResult.value);
+      } else {
+        console.warn('Serie historica indisponivel no momento:', historyResult.reason);
+        setSeries({
+          municipality: currentResult.value.municipality,
+          total: 0,
+          high_risk_threshold: currentResult.value.high_risk_threshold,
+          series: [],
+        });
+      }
+
+      if (surfaceResult.status === 'fulfilled') {
+        setSurface(surfaceResult.value);
+      } else {
+        console.warn('Superficie indisponivel para diagnostico:', surfaceResult.reason);
+        setSurface(null);
+      }
     } catch (err: any) {
       console.error('Erro ao carregar analytics:', err);
       setError('Nao foi possivel carregar as analises territoriais.');
