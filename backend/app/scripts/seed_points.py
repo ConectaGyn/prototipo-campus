@@ -81,6 +81,7 @@ def seed_points() -> dict:
     total_lidos = 0
     inseridos = 0
     ignorados = 0
+    reativados = 0
     erros = 0
 
     with SessionLocal() as session:
@@ -107,6 +108,28 @@ def seed_points() -> dict:
                         existing = session.get(Point, point_id)
 
                         if existing:
+                            updated = False
+                            if existing.active is not True:
+                                existing.active = True
+                                updated = True
+                            if existing.municipality_id != municipality_id:
+                                existing.municipality_id = municipality_id
+                                updated = True
+                            if existing.name != name:
+                                existing.name = name
+                                updated = True
+                            if float(existing.latitude) != latitude:
+                                existing.latitude = latitude
+                                updated = True
+                            if float(existing.longitude) != longitude:
+                                existing.longitude = longitude
+                                updated = True
+                            if int(existing.influence_radius_m or 0) != 300:
+                                existing.influence_radius_m = 300
+                                updated = True
+
+                            if updated:
+                                reativados += 1
                             ignorados += 1
                             continue
 
@@ -141,12 +164,14 @@ def seed_points() -> dict:
     print(f"Total lidos: {total_lidos}")
     print(f"Inseridos: {inseridos}")
     print(f"Ignorados (já existentes): {ignorados}")
+    print(f"Reativados/atualizados: {reativados}")
     print(f"Erros: {erros}")
     print("\nProcesso concluído.\n")
 
     return {
         "inserted": inseridos,
         "ignored": ignorados,
+        "reactivated_or_updated": reativados,
         "errors": erros,
     }
 
