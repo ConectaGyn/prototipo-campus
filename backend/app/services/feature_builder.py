@@ -185,16 +185,20 @@ class FeatureBuilder:
         if len(series) < window:
             return sum(series) / len(series)
 
-        return sum(series[-window:]) / window
+        # series[0] = ontem, series[1] = 2 dias atrás, ...
+        # Média móvel deve usar os dias mais recentes.
+        return sum(series[:window]) / window
 
     def _lag(self, series: List[float], lag: int) -> float:
         if not series:
             return 0.0
 
         if len(series) < lag:
+            # Sem histórico suficiente: usa o dado mais antigo disponível.
             return series[-1]
 
-        return series[-lag]
+        # lag=1 => ontem => series[0]
+        return series[lag - 1]
 
     def _seasonal_components(self, d: date) -> Dict[str, float]:
         mes = d.month

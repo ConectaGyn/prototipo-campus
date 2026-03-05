@@ -11,11 +11,10 @@ import type {
 import type { MapPointView } from "@domains/map/types";
 import type { SurfaceEnvelope } from "@domains/surface/types";
 
-import { getWeatherData, getLocationName, getCurrentWeather } from "@services/weather";
-import { getMapPoints, getPointRisk } from "@services/map.service";
+import { getCurrentWeather, getWeatherData, getLocationName } from "@services/weather";
+import { getMapPoints, recomputeAllRiskNow } from "@services/map.service";
 import { getSurface } from "@services/surface.service";
 import { getMunicipalityGeoJson } from "@services/municipality.service";
-import { getPoints, type PointItem } from "@services/points.service";
 
 import Header from "./components/Header.tsx";
 import WeatherCard from "./components/WeatherCard.tsx";
@@ -35,8 +34,9 @@ const GOIANIA_COORDS = {
 };
 
 const DEFAULT_MUNICIPALITY_ID = 1;
-const RISK_ENRICH_BATCH_SIZE = 8;
-const WEATHER_ENRICH_BATCH_SIZE = 5;
+const WEATHER_ENRICH_BATCH_SIZE = 6;
+const WEATHER_REFRESH_INTERVAL_MS = 300000;
+const RISK_REFRESH_INTERVAL_MS = 10800000;
 
 const App: React.FC = () => {
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
@@ -53,10 +53,13 @@ const App: React.FC = () => {
 
   const [locationName, setLocationName] = useState("");
   const [riskAlert, setRiskAlert] = useState<RiskAlert | null>(null);
+  const [riskSnapshotTimestamp, setRiskSnapshotTimestamp] = useState<string | null>(null);
+  const [riskSnapshotValidUntil, setRiskSnapshotValidUntil] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isRiskRecomputing, setIsRiskRecomputing] = useState(false);
 
   const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(() => {
     const stored = localStorage.getItem("soundEnabled");
@@ -64,6 +67,7 @@ const App: React.FC = () => {
   });
 
   const isFetchingRef = useRef(false);
+  const isRiskFetchingRef = useRef(false);
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -71,46 +75,6 @@ const App: React.FC = () => {
   }, [isSoundEnabled]);
 
   const toggleSound = () => setIsSoundEnabled((prev) => !prev);
-
-  const enrichSensorsWithWeather = useCallback(
-    async (sensors: SensorData[]): Promise<SensorData[]> => {
-      if (sensors.length === 0) return sensors;
-
-      const enriched = [...sensors];
-
-      for (let i = 0; i < enriched.length; i += WEATHER_ENRICH_BATCH_SIZE) {
-        const batch = enriched.slice(i, i + WEATHER_ENRICH_BATCH_SIZE);
-        const results = await Promise.allSettled(
-          batch.map((sensor) =>
-            getCurrentWeather(sensor.coords.lat, sensor.coords.lon)
-          )
-        );
-
-        results.forEach((result, idx) => {
-          const targetIndex = i + idx;
-          if (result.status !== "fulfilled") return;
-
-          const current = result.value;
-          enriched[targetIndex] = {
-            ...enriched[targetIndex],
-            temp: current.temp,
-            humidity: current.humidity,
-            wind_speed: current.wind_speed,
-            feels_like: current.feels_like,
-            pressure: current.pressure,
-            rain: current.rain,
-          };
-        });
-
-        if (i + WEATHER_ENRICH_BATCH_SIZE < enriched.length) {
-          await new Promise((resolve) => setTimeout(resolve, 250));
-        }
-      }
-
-      return enriched;
-    },
-    []
-  );
 
   const fetchWeatherAndLocation = useCallback(
     async (lat: number, lon: number, locationError: string | null) => {
@@ -185,138 +149,195 @@ const App: React.FC = () => {
     [fetchWeatherAndLocation]
   );
 
-  useEffect(() => {
-    const loadInitialData = async () => {
-      try {
-        setLoading(true);
+  const mapPointToSensor = useCallback((risk: MapPointView): SensorData => {
+    const level = risk.nivel_risco ?? risk.nivel_risco_relativo;
+    return {
+      id: risk.id,
+      location: risk.nome,
+      coords: {
+        lat: risk.latitude,
+        lon: risk.longitude,
+      },
+      temp: null,
+      humidity: null,
+      wind_speed: null,
+      feels_like: null,
+      pressure: null,
+      rain: null,
+      alert: level
+        ? {
+            level: level as SensorRiskLevel,
+            message: `Risco ${level}`,
+            color: undefined,
+            icra: risk.icra ?? undefined,
+            confianca: risk.confianca ?? undefined,
+          }
+        : null,
+    };
+  }, []);
 
-        const [pointsResult, mapPointsResult, surfaceResult, geoJsonResult] =
-          await Promise.allSettled([
-            getPoints(),
-            getMapPoints(),
-            getSurface(DEFAULT_MUNICIPALITY_ID),
-            getMunicipalityGeoJson(DEFAULT_MUNICIPALITY_ID),
-          ]);
+  const enrichSensorsWithWeather = useCallback(
+    async (sensors: SensorData[]): Promise<SensorData[]> => {
+      if (sensors.length === 0) return sensors;
 
-        const allPoints =
-          pointsResult.status === "fulfilled" ? pointsResult.value : [];
-        const mapPoints =
-          mapPointsResult.status === "fulfilled" ? mapPointsResult.value.pontos : [];
+      const enriched = [...sensors];
 
-        const riskByPointId = new Map<string, MapPointView>(
-          mapPoints.map((item) => [item.id, item])
+      for (let i = 0; i < enriched.length; i += WEATHER_ENRICH_BATCH_SIZE) {
+        const batch = enriched.slice(i, i + WEATHER_ENRICH_BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map((sensor) =>
+            getCurrentWeather(sensor.coords.lat, sensor.coords.lon)
+          )
         );
 
-        const converted: SensorData[] = allPoints
-          .filter(
-            (point: PointItem) =>
-              point.active &&
-              (point.municipality_id === DEFAULT_MUNICIPALITY_ID ||
-                point.municipality_id === null)
-          )
-          .map((point: PointItem) => {
-            const risk = riskByPointId.get(point.id);
-            const level = risk?.nivel_risco_relativo ?? risk?.nivel_risco;
+        results.forEach((result, idx) => {
+          const targetIndex = i + idx;
+          if (result.status !== "fulfilled") return;
 
-            return {
-              id: point.id,
-              location: point.name,
-              coords: {
-                lat: point.latitude,
-                lon: point.longitude,
-              },
-              temp: null,
-              humidity: null,
-              wind_speed: null,
-              feels_like: null,
-              pressure: null,
-              rain: null,
-              alert: level
-                ? {
-                    level: level as SensorRiskLevel,
-                    message: `Risco ${level}`,
-                    color: undefined,
-                    icra: risk?.icra ?? undefined,
-                    confianca: risk?.confianca ?? undefined,
-                  }
-                : null,
-            };
-          });
+          const current = result.value;
+          enriched[targetIndex] = {
+            ...enriched[targetIndex],
+            temp: current.temp,
+            humidity: current.humidity,
+            wind_speed: current.wind_speed,
+            feels_like: current.feels_like,
+            pressure: current.pressure,
+            rain: current.rain,
+          };
+        });
 
-        const sensorsWithWeather = await enrichSensorsWithWeather(converted);
-        setMapSensors(sensorsWithWeather);
-
-        const missingRiskIds = converted
-          .filter((sensor) => !sensor.alert)
-          .map((sensor) => sensor.id);
-
-        if (missingRiskIds.length > 0) {
-          const resolvedRiskById = new Map<string, Awaited<ReturnType<typeof getPointRisk>>>();
-
-          for (let i = 0; i < missingRiskIds.length; i += RISK_ENRICH_BATCH_SIZE) {
-            const batch = missingRiskIds.slice(i, i + RISK_ENRICH_BATCH_SIZE);
-            const batchResults = await Promise.allSettled(
-              batch.map((pointId) => getPointRisk(pointId))
-            );
-
-            batchResults.forEach((result) => {
-              if (result.status === "fulfilled") {
-                resolvedRiskById.set(result.value.point_id, result.value);
-              }
-            });
-          }
-
-          if (resolvedRiskById.size > 0) {
-            setMapSensors((prev) =>
-              prev.map((sensor) => {
-                if (sensor.alert) return sensor;
-
-                const risk = resolvedRiskById.get(sensor.id);
-                if (!risk) return sensor;
-
-                const level = risk.nivel_risco_relativo ?? risk.nivel_risco;
-                return {
-                  ...sensor,
-                  alert: {
-                    level: level as SensorRiskLevel,
-                    message: `Risco ${level}`,
-                    color: undefined,
-                    icra: risk.icra,
-                    confianca: risk.confianca,
-                  },
-                };
-              })
-            );
-          }
+        if (i + WEATHER_ENRICH_BATCH_SIZE < enriched.length) {
+          await new Promise((resolve) => setTimeout(resolve, 150));
         }
+      }
+
+      return enriched;
+    },
+    []
+  );
+
+  const refreshSensorsWeatherOnly = useCallback(async () => {
+    const sensorsSnapshot = mapSensors;
+    if (sensorsSnapshot.length === 0) return;
+
+    const weatherById = new Map<
+      string,
+      Awaited<ReturnType<typeof getCurrentWeather>>
+    >();
+
+    for (let i = 0; i < sensorsSnapshot.length; i += WEATHER_ENRICH_BATCH_SIZE) {
+      const batch = sensorsSnapshot.slice(i, i + WEATHER_ENRICH_BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map((sensor) =>
+          getCurrentWeather(sensor.coords.lat, sensor.coords.lon)
+        )
+      );
+
+      results.forEach((result, idx) => {
+        if (result.status !== "fulfilled") return;
+        weatherById.set(batch[idx].id, result.value);
+      });
+
+      if (i + WEATHER_ENRICH_BATCH_SIZE < sensorsSnapshot.length) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+    }
+
+    if (weatherById.size === 0) return;
+
+    setMapSensors((prev) =>
+      prev.map((sensor) => {
+        const current = weatherById.get(sensor.id);
+        if (!current) return sensor;
+        return {
+          ...sensor,
+          temp: current.temp,
+          humidity: current.humidity,
+          wind_speed: current.wind_speed,
+          feels_like: current.feels_like,
+          pressure: current.pressure,
+          rain: current.rain,
+        };
+      })
+    );
+  }, [mapSensors]);
+
+  const refreshRiskData = useCallback(
+    async (initial = false) => {
+      if (isRiskFetchingRef.current) return;
+      isRiskFetchingRef.current = true;
+
+      try {
+        if (initial) {
+          setLoading(true);
+          setError(null);
+        }
+
+        const [mapPointsResult, surfaceResult, geoJsonResult] = await Promise.allSettled([
+          getMapPoints(DEFAULT_MUNICIPALITY_ID),
+          getSurface(DEFAULT_MUNICIPALITY_ID),
+          municipalityGeoJson
+            ? Promise.resolve(municipalityGeoJson)
+            : getMunicipalityGeoJson(DEFAULT_MUNICIPALITY_ID),
+        ]);
+
+        if (mapPointsResult.status !== "fulfilled") {
+          throw mapPointsResult.reason;
+        }
+
+        const baseSensors = mapPointsResult.value.pontos
+          .filter((point) => point.ativo)
+          .map(mapPointToSensor);
+
+        setRiskSnapshotTimestamp(mapPointsResult.value.snapshot_timestamp);
+        setRiskSnapshotValidUntil(mapPointsResult.value.snapshot_valid_until);
+
+        const sensorsWithWeather = await enrichSensorsWithWeather(baseSensors);
+        setMapSensors(sensorsWithWeather);
 
         if (surfaceResult.status === "fulfilled") {
           setSurface(surfaceResult.value);
         } else {
-          setSurface(null);
           console.warn("Superficie nao carregada:", surfaceResult.reason);
         }
 
         if (geoJsonResult.status === "fulfilled") {
           setMunicipalityGeoJson(geoJsonResult.value);
         } else {
-          setMunicipalityGeoJson(null);
           console.warn("GeoJSON do municipio nao carregado:", geoJsonResult.reason);
         }
-
-        if (pointsResult.status !== "fulfilled") {
-          throw pointsResult.reason;
-        }
       } catch (err) {
-        console.error("Erro ao carregar dados iniciais:", err);
-        setError("Erro ao carregar dados do monitoramento.");
+        console.error("Erro ao carregar dados de risco:", err);
+        setError("Erro ao atualizar dados de risco.");
       } finally {
-        setLoading(false);
+        if (initial) {
+          setLoading(false);
+        }
+        isRiskFetchingRef.current = false;
       }
-    };
+    },
+    [enrichSensorsWithWeather, mapPointToSensor, municipalityGeoJson]
+  );
 
-    loadInitialData();
-  }, [enrichSensorsWithWeather]);
+  const runManualRiskRecompute = useCallback(async () => {
+    if (isRiskRecomputing) return;
+    setIsRiskRecomputing(true);
+    setIsRefreshing(true);
+    try {
+      await recomputeAllRiskNow();
+      await refreshRiskData(false);
+    } catch (err) {
+      console.error("Erro ao recalcular risco global:", err);
+      setError("Falha ao recalcular risco global.");
+    } finally {
+      setIsRiskRecomputing(false);
+      setIsRefreshing(false);
+    }
+  }, [isRiskRecomputing, refreshRiskData]);
+
+  useEffect(() => {
+    void refreshRiskData(true);
+  }, [refreshRiskData]);
 
   useEffect(() => {
     updateUserLocationData(true);
@@ -324,11 +345,39 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      updateUserLocationData(false);
-    }, 300000);
+      void updateUserLocationData(false);
+    }, WEATHER_REFRESH_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [updateUserLocationData]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void refreshSensorsWeatherOnly();
+    }, WEATHER_REFRESH_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [refreshSensorsWeatherOnly]);
+
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    const msUntilNextCycle =
+      RISK_REFRESH_INTERVAL_MS - (Date.now() % RISK_REFRESH_INTERVAL_MS);
+
+    const timeoutId = setTimeout(() => {
+      void refreshRiskData(false);
+      intervalId = setInterval(() => {
+        void refreshRiskData(false);
+      }, RISK_REFRESH_INTERVAL_MS);
+    }, msUntilNextCycle);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [refreshRiskData]);
 
   if (loading) {
     return (
@@ -390,12 +439,21 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 px-3 sm:px-4 lg:px-6">
       <Header
-        onRefresh={() => updateUserLocationData(true)}
+        onRefresh={() => {
+          void updateUserLocationData(true);
+          void refreshRiskData(false);
+        }}
+        onRecomputeRiskNow={() => {
+          void runManualRiskRecompute();
+        }}
         isRefreshing={isRefreshing}
+        isRiskRecomputing={isRiskRecomputing}
         theme={theme}
         toggleTheme={toggleTheme}
         isSoundEnabled={isSoundEnabled}
         toggleSound={toggleSound}
+        riskSnapshotTimestamp={riskSnapshotTimestamp}
+        riskSnapshotValidUntil={riskSnapshotValidUntil}
       />
 
       <div className="mt-4">

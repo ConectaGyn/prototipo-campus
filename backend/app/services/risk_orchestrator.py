@@ -218,6 +218,7 @@ class RiskOrchestrator:
             start_date=start_date,
             end_date=end_date,
             target_date=target_date,
+            reference_ts=reference_ts,
         )
 
         # 2) Features 
@@ -269,6 +270,7 @@ class RiskOrchestrator:
         start_date: date,
         end_date: date,
         target_date: date,
+        reference_ts: Optional[datetime] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, List[float]]]:
         """
         Retorna:
@@ -284,6 +286,12 @@ class RiskOrchestrator:
             )
 
             climate_today, history = self._series_to_today_and_history(series, target_date=target_date)
+            climate_today = self._overlay_intraday_signal(
+                latitude=latitude,
+                longitude=longitude,
+                climate_today=climate_today,
+                reference_ts=reference_ts,
+            )
             return climate_today, history
 
         if not hasattr(self.climate_service, "get_daily_climate"):
@@ -310,7 +318,48 @@ class RiskOrchestrator:
             "precipitacao_total_mm": precip_series,
             "temperatura_media_2m_C": temp_series,
         }
+        climate_today = self._overlay_intraday_signal(
+            latitude=latitude,
+            longitude=longitude,
+            climate_today=climate_today,
+            reference_ts=reference_ts,
+        )
         return climate_today, history
+
+    def _overlay_intraday_signal(
+        self,
+        latitude: float,
+        longitude: float,
+        climate_today: Dict[str, Any],
+        reference_ts: Optional[datetime],
+    ) -> Dict[str, Any]:
+        """
+        Injeta sinal intradiário (janela de 3h) nas features de hoje.
+        Se o provedor horário falhar, mantém comportamento diário atual.
+        """
+        if reference_ts is None:
+            return climate_today
+
+        if not hasattr(self.climate_service, "get_intraday_snapshot"):
+            return climate_today
+
+        try:
+            intraday = self.climate_service.get_intraday_snapshot(
+                latitude=latitude,
+                longitude=longitude,
+                reference_ts=reference_ts,
+                window_hours=3,
+            )
+        except Exception:
+            return climate_today
+
+        merged = dict(climate_today)
+        merged["precipitacao_total_mm"] = float(intraday.get("precipitacao_total_mm", merged.get("precipitacao_total_mm", 0.0)) or 0.0)
+        merged["temperatura_media_2m_C"] = float(intraday.get("temperatura_media_2m_C", merged.get("temperatura_media_2m_C", 0.0)) or 0.0)
+        merged["temperatura_aparente_media_2m_C"] = float(
+            intraday.get("temperatura_aparente_media_2m_C", merged.get("temperatura_aparente_media_2m_C", 0.0)) or 0.0
+        )
+        return merged
 
     def _series_to_today_and_history(
         self,

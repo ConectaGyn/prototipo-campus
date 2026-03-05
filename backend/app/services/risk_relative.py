@@ -32,7 +32,8 @@ def compute_relative_levels_by_point(snapshots: List[object]) -> Dict[str, str]:
     if not valid:
         return {}
 
-    valid.sort(key=lambda x: x[1])
+    # Ordenação determinística para evitar instabilidade em empates de ICRA.
+    valid.sort(key=lambda x: (x[1], x[0]))
     n = len(valid)
     out: Dict[str, str] = {}
 

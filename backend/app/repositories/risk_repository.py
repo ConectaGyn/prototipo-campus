@@ -16,7 +16,7 @@ Não realiza chamadas externas.
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func, distinct
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -137,6 +137,45 @@ class RiskRepository:
             .limit(1)
         )
 
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def get_latest_bucket_timestamp_for_points(
+        self,
+        point_ids: List[str],
+    ) -> Optional[datetime]:
+        """
+        Retorna o timestamp mais recente contendo ao menos um snapshot dos pontos informados.
+        """
+        if not point_ids:
+            return None
+
+        stmt = (
+            select(RiskSnapshot.snapshot_timestamp)
+            .where(RiskSnapshot.point_id.in_(point_ids))
+            .order_by(desc(RiskSnapshot.snapshot_timestamp))
+            .limit(1)
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def get_latest_complete_bucket_timestamp(
+        self,
+        point_ids: List[str],
+    ) -> Optional[datetime]:
+        """
+        Retorna o bucket mais recente que contém snapshots para TODOS os pontos informados.
+        """
+        if not point_ids:
+            return None
+
+        expected = len(set(point_ids))
+        stmt = (
+            select(RiskSnapshot.snapshot_timestamp)
+            .where(RiskSnapshot.point_id.in_(point_ids))
+            .group_by(RiskSnapshot.snapshot_timestamp)
+            .having(func.count(distinct(RiskSnapshot.point_id)) == expected)
+            .order_by(desc(RiskSnapshot.snapshot_timestamp))
+            .limit(1)
+        )
         return self.db.execute(stmt).scalar_one_or_none()
 
     def get_snapshots_by_bucket(

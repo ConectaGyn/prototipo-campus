@@ -12,7 +12,7 @@ Este módulo:
 """
 
 from typing import List, Dict, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -86,12 +86,10 @@ def get_map_points(
         if municipality_id is not None:
             query = query.filter(Point.municipality_id == municipality_id)
 
-        points: List[Point] = (
-            query
-            .order_by(Point.id.asc())
-            .limit(settings.MAP.MAX_POINTS)
-            .all()
-        )
+        query = query.order_by(Point.id.asc())
+        if municipality_id is None:
+            query = query.limit(settings.MAP.MAX_POINTS)
+        points: List[Point] = query.all()
 
         # -------------------------------------------------
         # Buscar snapshot mais recente global
@@ -99,12 +97,16 @@ def get_map_points(
 
         repository = RiskRepository(db)
 
-        snapshot_timestamp: Optional[datetime] = (
-            repository.get_latest_bucket_timestamp()
-        )
+        point_ids = [p.id for p in points]
+        snapshot_timestamp: Optional[datetime] = None
 
         snapshots_by_point: Dict[str, object] = {}
         relative_level_by_point: Dict[str, str] = {}
+
+        if with_risk and point_ids:
+            snapshot_timestamp = repository.get_latest_complete_bucket_timestamp(point_ids)
+            if snapshot_timestamp is None:
+                snapshot_timestamp = repository.get_latest_bucket_timestamp_for_points(point_ids)
 
         if with_risk and snapshot_timestamp:
             snapshots = repository.get_snapshots_by_bucket(
@@ -168,6 +170,8 @@ def get_map_points(
             pontos=response_points,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
