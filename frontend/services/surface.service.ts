@@ -40,6 +40,12 @@ async function fetchWithTimeout<T>(
   try {
     const response = await fetch(url, {
       ...options,
+      cache: "no-store",
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
+        ...(options.headers || {}),
+      },
       signal: controller.signal,
     });
 
@@ -64,8 +70,9 @@ export async function getSurface(
   }
 
   const url = `${API_BASE_URL}${SURFACE_ENDPOINT}/${municipalityId}`;
+  const cacheBusterUrl = `${url}${url.includes("?") ? "&" : "?"}_ts=${Date.now()}`;
 
-  const data = await fetchWithTimeout<SurfaceEnvelope>(url, {
+  const data = await fetchWithTimeout<SurfaceEnvelope>(cacheBusterUrl, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -118,8 +125,9 @@ export async function getSurfaceMetadata(
   }
 
   const url = `${API_BASE_URL}${SURFACE_ENDPOINT}/${municipalityId}/metadata`;
+  const cacheBusterUrl = `${url}${url.includes("?") ? "&" : "?"}_ts=${Date.now()}`;
 
-  const data = await fetchWithTimeout<Omit<SurfaceEnvelope, "geojson">>(url, {
+  const data = await fetchWithTimeout<Omit<SurfaceEnvelope, "geojson">>(cacheBusterUrl, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
