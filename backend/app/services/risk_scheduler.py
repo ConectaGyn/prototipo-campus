@@ -14,7 +14,7 @@ Compatível com a arquitetura atual:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Optional
 
 from backend.app.database import SessionLocal
@@ -24,14 +24,7 @@ from backend.app.services.risk_orchestrator import RiskOrchestrator
 from backend.app.repositories.municipality_repository import MunicipalityRepository
 from backend.app.repositories.risk_surface_repository import RiskSurfaceRepository
 from backend.app.services.risk_surface_service import RiskSurfaceService
-
-# ============================================================
-# Helpers
-# ============================================================
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
-
+from backend.app.models.point import Point
 
 # ============================================================
 # Scheduler
@@ -48,8 +41,11 @@ class RiskScheduler:
 
     def __init__(self) -> None:
         self.ttl_seconds = int(settings.RISK.SNAPSHOT_TTL_SECONDS)
-        self.poll_seconds = int(settings.RISK.SCHEDULE_INTERVAL_SECONDS)
-        self.enabled = bool(settings.SCHEDULER_ENABLED)
+        self.cycle_seconds = int(settings.RISK.SCHEDULE_INTERVAL_SECONDS)
+        # Poll curto para alinhar execução aos buckets mesmo se a app iniciar fora da borda de 3h.
+        self.poll_seconds = min(self.cycle_seconds, 60)
+        self.enabled = bool(settings.RISK.SCHEDULER_ENABLED)
+        self._last_surface_reference_ts: Optional[datetime] = None
 
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
@@ -78,7 +74,8 @@ class RiskScheduler:
     async def _loop(self):
         while not self._stop_event.is_set():
             try:
-                self._maybe_generate_snapshot()
+                # Executa o ciclo em thread para não bloquear o event loop do FastAPI.
+                await asyncio.to_thread(self._maybe_generate_snapshot)
             except Exception as e:
                 print(f"[SCHEDULER][ERROR] {repr(e)}")
 
@@ -92,20 +89,32 @@ class RiskScheduler:
         with SessionLocal() as session:
 
             repo = RiskRepository(session)
-            latest_ts = repo.get_latest_bucket_timestamp()
-
-            now = _utcnow()
-
-            if latest_ts:
-                delta = now - latest_ts
-                if delta < timedelta(seconds=self.ttl_seconds):
-                    return False
-
             orchestrator = RiskOrchestrator(repository=repo)
-
             reference_ts = orchestrator.get_reference_ts_now()
+            points = orchestrator.list_points(db=session, only_active=True)
+            total_points = len(points)
 
-            print(f"[SCHEDULER] Gerando snapshot {reference_ts.isoformat()}")
+            if total_points == 0:
+                return False
+
+            bucket_snapshots = repo.get_snapshots_by_bucket(reference_ts)
+            snapshot_ids = {s.point_id for s in bucket_snapshots}
+            active_ids = {p.id for p in points}
+            missing_count = len(active_ids - snapshot_ids)
+
+            # Bucket atual já completo: nada a fazer.
+            if missing_count == 0:
+                self._ensure_surfaces_for_bucket(
+                    session=session,
+                    repo=repo,
+                    reference_ts=reference_ts,
+                )
+                return False
+
+            print(
+                "[SCHEDULER] Gerando/completando snapshot "
+                f"{reference_ts.isoformat()} | total={total_points} missing={missing_count}"
+            )
 
             result = orchestrator.compute_all_points_for_cycle(
                 db=session,
@@ -114,37 +123,75 @@ class RiskScheduler:
                 skip_if_exists=True,
             )
 
-            print(f"[SCHEDULER] REsultado: {result}")
-# ============================================================
-# GERAR SUPERFÍCIE POR MUNICÍPIO
-# ============================================================
+            print(f"[SCHEDULER] Resultado: {result}")
+            self._ensure_surfaces_for_bucket(
+                session=session,
+                repo=repo,
+                reference_ts=reference_ts,
+            )
+            return result["created"] > 0
+
+    def _ensure_surfaces_for_bucket(
+        self,
+        session,
+        repo: RiskRepository,
+        reference_ts: datetime,
+    ) -> None:
+        if self._last_surface_reference_ts == reference_ts:
+            return
+
+        mrepo = MunicipalityRepository(session)
+        srepo = RiskSurfaceRepository(session)
+        surface_service = RiskSurfaceService(
+            municipality_repo=mrepo,
+            surface_repo=srepo,
+            risk_repo=repo,
+        )
+
+        municipalities = mrepo.list_active_for_surface_generation()
+        ok = 0
+        skip_no_points = 0
+        failed = 0
+
+        for municipality in municipalities:
+            has_points = (
+                session.query(Point.id)
+                .filter(
+                    Point.active.is_(True),
+                    Point.municipality_id == municipality.id,
+                )
+                .first()
+                is not None
+            )
+            if not has_points:
+                skip_no_points += 1
+                continue
+
             try:
-                mrepo = MunicipalityRepository(session)
-                srepo = RiskSurfaceRepository(session)
-                surface_service = RiskSurfaceService(
-                    municipality_repo=mrepo,
-                    surface_repo=srepo,
-                    risk_repo=repo,
+                print(
+                    f"[SCHEDULER] Gerando superfície para município "
+                    f"{municipality.id} - {municipality.name}"
+                )
+                surface_service.get_or_generate_surface(
+                    db=session,
+                    municipality_id=municipality.id,
+                    snapshot_timestamp=reference_ts,
+                    force_recompute=True,
+                    source="scheduled",
+                )
+                ok += 1
+            except Exception as e:
+                failed += 1
+                print(
+                    "[SCHEDULER][SURFACE ERROR] "
+                    f"municipality_id={municipality.id} error={repr(e)}"
                 )
 
-                municipalities = mrepo.list_active()
-
-                for municipality in municipalities:
-                    print(
-                        f"[SCHEDULER] Gerando superfície para município"
-                        f"{municipality.id} - {municipality.name}"
-                    )
-
-                    surface_service.get_or_generate_surface(
-                        db=session,
-                        municipality_id=municipality.id,
-                        snapshot_timestamp=reference_ts,
-                        force_recompute=False,
-                        source="scheduled",
-                    )
-            except Exception as e:
-                print(f"[SCHEDULER][SURFACE ERROR] {repr(e)}")
-            return result["created"] > 0
+        print(
+            "[SCHEDULER] Superfícies do bucket concluídas "
+            f"{reference_ts.isoformat()} | ok={ok} skip_no_points={skip_no_points} failed={failed}"
+        )
+        self._last_surface_reference_ts = reference_ts
         
 # ============================================================
 # Instância global
