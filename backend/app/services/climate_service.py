@@ -13,7 +13,7 @@ Este módulo:
 Ele apenas fornece séries climáticas confiáveis.
 """
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Dict
 
 import requests
@@ -113,6 +113,108 @@ class ClimateService:
                 time.sleep(backoff)
 
         return self._normalize_daily_response(payload)
+
+    def get_intraday_snapshot(
+        self,
+        latitude: float,
+        longitude: float,
+        reference_ts: datetime,
+        window_hours: int = 3,
+    ) -> Dict[str, float]:
+        """
+        Retorna um resumo intradiário (janela móvel em horas) para variar ciclos subdiários.
+
+        Estratégia:
+        - Busca série horária do dia de referência em UTC
+        - Agrega os últimos `window_hours` horários <= reference_ts
+        """
+        if reference_ts.tzinfo is None:
+            reference_ts = reference_ts.replace(tzinfo=timezone.utc)
+        else:
+            reference_ts = reference_ts.astimezone(timezone.utc)
+
+        if window_hours <= 0:
+            window_hours = 3
+
+        ref_date = reference_ts.date()
+        start_date = ref_date - timedelta(days=1)
+        url = self._select_endpoint(ref_date)
+
+        params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "hourly": "precipitation,temperature_2m,apparent_temperature",
+            "timezone": "UTC",
+            "start_date": start_date.isoformat(),
+            "end_date": ref_date.isoformat(),
+        }
+
+        response = self._session.get(url, params=params, timeout=self.timeout)
+        response.raise_for_status()
+        payload = response.json()
+        hourly = payload.get("hourly") or {}
+
+        times = hourly.get("time") or []
+        precipitation = hourly.get("precipitation") or []
+        temperature = hourly.get("temperature_2m") or []
+        apparent_temperature = hourly.get("apparent_temperature") or []
+
+        if not times:
+            raise ClimateServiceError("Resposta horária sem timestamps.")
+
+        rows = []
+        for i, raw_ts in enumerate(times):
+            try:
+                ts = datetime.fromisoformat(str(raw_ts))
+            except Exception:
+                continue
+
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            else:
+                ts = ts.astimezone(timezone.utc)
+
+            rows.append(
+                {
+                    "ts": ts,
+                    "precipitation": float(precipitation[i] or 0.0) if i < len(precipitation) else 0.0,
+                    "temperature_2m": float(temperature[i] or 0.0) if i < len(temperature) else 0.0,
+                    "apparent_temperature": float(apparent_temperature[i] or 0.0) if i < len(apparent_temperature) else 0.0,
+                }
+            )
+
+        if not rows:
+            raise ClimateServiceError("Não foi possível normalizar série horária.")
+
+        end_ts = reference_ts.replace(minute=0, second=0, microsecond=0)
+        selected_until_ref = [r for r in rows if r["ts"] <= end_ts]
+        if not selected_until_ref:
+            raise ClimateServiceError("Sem dados horários para a referência.")
+
+        recent_window_start = end_ts - timedelta(hours=max(1, window_hours) - 1)
+        recent_window = [r for r in selected_until_ref if recent_window_start <= r["ts"] <= end_ts]
+        if not recent_window:
+            recent_window = [selected_until_ref[-1]]
+
+        rolling24_start = end_ts - timedelta(hours=23)
+        rolling24_window = [r for r in selected_until_ref if rolling24_start <= r["ts"] <= end_ts]
+        if not rolling24_window:
+            rolling24_window = recent_window
+
+        if not rolling24_window:
+            raise ClimateServiceError("Sem dados horários para a janela de referência.")
+
+        # Mantém unidade diária esperada pelo modelo para precipitação (mm/24h).
+        precip_sum_24h = sum(r["precipitation"] for r in rolling24_window)
+        # Para temperatura, usa janela curta para captar variação intradiária.
+        temp_mean_recent = sum(r["temperature_2m"] for r in recent_window) / len(recent_window)
+        app_temp_mean_recent = sum(r["apparent_temperature"] for r in recent_window) / len(recent_window)
+
+        return {
+            "precipitacao_total_mm": float(precip_sum_24h),
+            "temperatura_media_2m_C": float(temp_mean_recent),
+            "temperatura_aparente_media_2m_C": float(app_temp_mean_recent),
+        }
     # -------------------------------------------------
     # AUXILIARES
     # -------------------------------------------------
