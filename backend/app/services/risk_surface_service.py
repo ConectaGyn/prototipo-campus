@@ -116,14 +116,6 @@ class RiskSurfaceService:
         else:
             snapshot_timestamp = snapshot_timestamp.astimezone(timezone.utc)
 
-        if not force_recompute:
-            existing = self.surface_repo.get_by_municipality_and_timestamp(
-                municipality_id=municipality_id,
-                snapshot_timestamp=snapshot_timestamp,
-            )
-            if existing and self.surface_repo.is_valid(existing, now=self._utcnow()):
-                return existing
-
         municipality = self.municipality_repo.get_by_id(municipality_id)
         if not municipality or not municipality.active:
             raise RiskSurfaceServiceError(f"Município inválido ou inativo: {municipality_id}")
@@ -143,6 +135,19 @@ class RiskSurfaceService:
 
         bucket_snaps = self.risk_repo.get_snapshots_by_bucket(snapshot_timestamp=snapshot_timestamp)
         snap_by_point = {s.point_id: s for s in bucket_snaps}
+
+        if not force_recompute:
+            existing = self.surface_repo.get_by_municipality_and_timestamp(
+                municipality_id=municipality_id,
+                snapshot_timestamp=snapshot_timestamp,
+            )
+            if existing and self.surface_repo.is_valid(existing, now=self._utcnow()):
+                # Reutiliza apenas quando há cobertura completa do bucket para o município.
+                # Evita manter superfície "congelada" criada com poucos pontos calculados.
+                active_point_ids = {p.id for p in points}
+                snap_point_ids = {pid for pid in active_point_ids if pid in snap_by_point}
+                if active_point_ids and len(snap_point_ids) == len(active_point_ids):
+                    return existing
 
         valid_points: List[Point] = []
         valid_snaps: List[RiskSnapshot] = []
@@ -206,7 +211,7 @@ class RiskSurfaceService:
         point_ids = [p.id for p in points]
         icras_abs = [icra_by_point[pid] for pid in point_ids]
         icras_rel = self._relative_rank_values(icras_abs)
-        cell_values: List[Tuple[float, float, float, float, str, str]] = []
+        cell_values: List[Tuple[float, float, float, float, float, str, str]] = []
         high_risk_cells = 0
 
         # Pré-cálculo de “tamanho da célula” em graus (para polígonos)
@@ -230,12 +235,23 @@ class RiskSurfaceService:
 
             level_abs = self._risk_level_from_icra(risk_abs)
             level_rel = self._risk_level_from_icra(risk_rel)
+            risk_color_value = self._risk_color_value_from_abs_icra(risk_abs)
 
             if risk_abs >= self.cfg.high_risk_threshold:
                 high_risk_cells += 1
 
             min_lat, min_lon, max_lat, max_lon = cell_bounds
-            cell_values.append((min_lat, min_lon, risk_abs, risk_rel, level_abs, level_rel))
+            cell_values.append(
+                (
+                    min_lat,
+                    min_lon,
+                    risk_abs,
+                    risk_rel,
+                    risk_color_value,
+                    level_abs,
+                    level_rel,
+                )
+            )
 
         total_cells = len(cell_values)
 
@@ -410,13 +426,14 @@ class RiskSurfaceService:
 
     def _build_geojson_cells(
         self,
-        cell_values: List[Tuple[float, float, float, float, str, str]],
+        cell_values: List[Tuple[float, float, float, float, float, str, str]],
         resolution_m: int,
     ) -> Dict[str, Any]:
         """
         Constr?i FeatureCollection de pol?gonos de c?lulas.
 
-        cell_values: (min_lat, min_lon, risk_abs, risk_rel, level_abs, level_rel)
+        cell_values:
+            (min_lat, min_lon, risk_abs, risk_rel, risk_color_value, level_abs, level_rel)
         """
         features: List[Dict[str, Any]] = []
 
@@ -425,7 +442,15 @@ class RiskSurfaceService:
             hue = (1.0 - rank) * 120.0
             return f"hsl({hue:.2f}, 75%, 45%)"
 
-        for (min_lat, min_lon, risk_abs, risk_rel, level_abs, level_rel) in cell_values:
+        for (
+            min_lat,
+            min_lon,
+            risk_abs,
+            risk_rel,
+            risk_color_value,
+            level_abs,
+            level_rel,
+        ) in cell_values:
             step_lat = float(resolution_m) / 111_320.0
             step_lon = float(resolution_m) / (111_320.0 * max(0.1, cos(radians(min_lat + step_lat / 2.0))))
 
@@ -440,7 +465,7 @@ class RiskSurfaceService:
                 [min_lon, min_lat],
             ]
 
-            color = _relative_color(float(risk_rel))
+            color = _relative_color(float(risk_color_value))
 
             features.append(
                 {
@@ -450,7 +475,9 @@ class RiskSurfaceService:
                         "risk_level": level_abs,
                         "risk_value_relative": float(risk_rel),
                         "risk_level_relative": level_rel,
+                        "risk_color_value": float(risk_color_value),
                         "color": color,
+                        "color_basis": "risk_level_calibrated",
                         "grid_resolution_m": int(resolution_m),
                     },
                     "geometry": {
@@ -498,6 +525,31 @@ class RiskSurfaceService:
         if icra < self.cfg.t_alto:
             return "Alto"
         return "Muito Alto"
+
+    def _risk_color_value_from_abs_icra(self, icra: float) -> float:
+        """
+        Reescala ICRA para cor com base nas faixas de risco.
+        Objetivo: evitar mapa visualmente "achatado" em verde quando os valores
+        absolutos ficam concentrados na faixa Moderado.
+        """
+        v = max(0.0, min(1.0, float(icra)))
+        t1 = float(self.cfg.t_baixo)
+        t2 = float(self.cfg.t_moderado)
+        t3 = float(self.cfg.t_alto)
+
+        def _lerp(x: float, x0: float, x1: float, y0: float, y1: float) -> float:
+            if x1 <= x0:
+                return y0
+            p = (x - x0) / (x1 - x0)
+            return y0 + p * (y1 - y0)
+
+        if v < t1:
+            return max(0.0, min(1.0, _lerp(v, 0.0, t1, 0.0, 0.25)))
+        if v < t2:
+            return max(0.0, min(1.0, _lerp(v, t1, t2, 0.25, 0.60)))
+        if v < t3:
+            return max(0.0, min(1.0, _lerp(v, t2, t3, 0.60, 0.85)))
+        return max(0.0, min(1.0, _lerp(v, t3, 1.0, 0.85, 1.0)))
 
     # --------------------------------------------------------
     # GEOJSON GEOMETRY EXTRACT + POINT IN POLYGON
@@ -666,18 +718,19 @@ class RiskSurfaceService:
     # --------------------------------------------------------
 
     def _load_config(self) -> SurfaceConfig:
-        grid_resolution_m = int(getattr(getattr(settings, "SURFACE", object()), "GRID_RESOLUTION_M", 500))
+        grid_resolution_m = int(getattr(getattr(settings, "SURFACE", object()), "GRID_RESOLUTION_M", 350))
 
-        knn_k = int(getattr(getattr(settings, "SURFACE", object()), "KNN_K", 5))
-        sigma_min_m = int(getattr(getattr(settings, "SURFACE", object()), "SIGMA_MIN_M", 300))
-        sigma_max_m = int(getattr(getattr(settings, "SURFACE", object()), "SIGMA_MAX_M", 2500))
-        sigma_scale = float(getattr(getattr(settings, "SURFACE", object()), "SIGMA_SCALE", 0.75))
+        knn_k = int(getattr(getattr(settings, "SURFACE", object()), "KNN_K", 4))
+        sigma_min_m = int(getattr(getattr(settings, "SURFACE", object()), "SIGMA_MIN_M", 180))
+        sigma_max_m = int(getattr(getattr(settings, "SURFACE", object()), "SIGMA_MAX_M", 1200))
+        sigma_scale = float(getattr(getattr(settings, "SURFACE", object()), "SIGMA_SCALE", 0.50))
 
         high_risk_threshold = float(getattr(getattr(settings, "SURFACE", object()), "HIGH_RISK_THRESHOLD", 0.7))
 
-        t_baixo = float(getattr(getattr(settings, "SURFACE", object()), "T_BAIXO", 0.25))
-        t_moderado = float(getattr(getattr(settings, "SURFACE", object()), "T_MODERADO", 0.50))
-        t_alto = float(getattr(getattr(settings, "SURFACE", object()), "T_ALTO", 0.75))
+        # Alinhado aos thresholds atuais do modelo ICRA (baixo/moderado/alto).
+        t_baixo = float(getattr(getattr(settings, "SURFACE", object()), "T_BAIXO", 0.142))
+        t_moderado = float(getattr(getattr(settings, "SURFACE", object()), "T_MODERADO", 0.278))
+        t_alto = float(getattr(getattr(settings, "SURFACE", object()), "T_ALTO", 0.426))
 
         max_cells = int(getattr(getattr(settings, "SURFACE", object()), "MAX_CELLS", 200_000))
 
