@@ -10,25 +10,49 @@ import appLogo from "../assets/logo.svg";
 
 interface HeaderProps {
   onRefresh: () => void;
+  onRecomputeRiskNow?: () => void;
   onOpenConfig?: () => void;
   isRefreshing?: boolean;
+  isRiskRecomputing?: boolean;
   theme: "light" | "dark";
   toggleTheme: () => void;
   isSoundEnabled: boolean;
   toggleSound: () => void;
   isSimulationActive?: boolean;
+  riskSnapshotTimestamp?: string | null;
+  riskSnapshotValidUntil?: string | null;
 }
 
 const Header: React.FC<HeaderProps> = ({
   onRefresh,
+  onRecomputeRiskNow,
   onOpenConfig,
   isRefreshing,
+  isRiskRecomputing = false,
   theme,
   toggleTheme,
   isSoundEnabled,
   toggleSound,
   isSimulationActive = false,
+  riskSnapshotTimestamp,
+  riskSnapshotValidUntil,
 }) => {
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return null;
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return null;
+    return dt.toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  };
+
+  const snapshotText = formatDateTime(riskSnapshotTimestamp);
+  const validUntilText = formatDateTime(riskSnapshotValidUntil);
+
   return (
     <header className="mb-6 lg:mb-8 overflow-hidden rounded-2xl border border-blue-300/20 bg-gradient-to-r from-blue-950 via-blue-900 to-slate-900 shadow-lg dark:border-blue-900/40 dark:from-blue-950 dark:via-blue-900 dark:to-slate-950">
       <div className="flex justify-between items-center gap-4 px-4 py-3 sm:px-5">
@@ -83,12 +107,31 @@ const Header: React.FC<HeaderProps> = ({
           >
             <RefreshCwIcon className={`w-5 h-5 text-white ${isRefreshing ? "animate-spin" : ""}`} />
           </button>
+          {onRecomputeRiskNow && (
+            <button
+              onClick={onRecomputeRiskNow}
+              className="px-3 py-2 rounded-full bg-amber-300/20 text-amber-100 hover:bg-amber-300/30 focus:outline-none focus:ring-2 focus:ring-amber-200 transition-colors text-xs font-semibold"
+              aria-label="Recalcular risco agora"
+              title="Recalcular risco de todos os pontos agora"
+              disabled={isRiskRecomputing}
+            >
+              {isRiskRecomputing ? "Recalculando..." : "Recalcular Risco Agora"}
+            </button>
+          )}
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2 border-t border-white/15 bg-black/10 px-4 py-2 text-xs sm:text-sm text-cyan-100/95 sm:px-5">
         <span className="inline-flex items-center rounded-full bg-white/10 px-2.5 py-1">
           {isRefreshing ? "Atualizando dados..." : "Dados sincronizados"}
         </span>
+        <span className="inline-flex items-center rounded-full bg-white/10 px-2.5 py-1">
+          Snapshot: {snapshotText ?? "indisponivel"}
+        </span>
+        {validUntilText && (
+          <span className="inline-flex items-center rounded-full bg-white/10 px-2.5 py-1">
+            Valido ate: {validUntilText}
+          </span>
+        )}
       </div>
     </header>
   );
