@@ -101,74 +101,25 @@ const MapComponent: React.FC<MapComponentProps> = ({
       iconAnchor: [12, 12],
     });
 
-  const getFeatureIcra = (feature: any): number => {
-    const raw =
-      feature?.properties?.risk_color_value ??
-      feature?.properties?.risk_value ??
-      feature?.properties?.icra;
-    const v = Number(raw);
-
-    if (Number.isFinite(v)) {
-      return Math.max(0, Math.min(1, v));
+  const colorFromRiskLevel = (level?: string | null): string => {
+    switch ((level ?? "").trim()) {
+      case "Muito Alto":
+        return "#991b1b";
+      case "Alto":
+        return "#dc2626";
+      case "Moderado":
+        return "#f59e0b";
+      case "Baixo":
+        return "#22c55e";
+      default:
+        return "#facc15";
     }
-
-    const relativeRaw = feature?.properties?.risk_value_relative;
-    const rel = Number(relativeRaw);
-    if (Number.isFinite(rel)) {
-      return Math.max(0, Math.min(1, rel));
-    }
-
-    return 0;
-  };
-
-  const colorFromIcra = (icra: number): string => {
-    const t = Math.max(0, Math.min(1, icra));
-    const stops = [
-      { t: 0.0, color: "#22c55e" },
-      { t: 0.45, color: "#facc15" },
-      { t: 0.7, color: "#f97316" },
-      { t: 0.9, color: "#dc2626" },
-      { t: 1.0, color: "#7f1d1d" },
-    ];
-
-    const toRgb = (hex: string) => {
-      const clean = hex.replace("#", "");
-      return {
-        r: parseInt(clean.slice(0, 2), 16),
-        g: parseInt(clean.slice(2, 4), 16),
-        b: parseInt(clean.slice(4, 6), 16),
-      };
-    };
-
-    const toHex = (v: number) => {
-      const clamped = Math.max(0, Math.min(255, Math.round(v)));
-      return clamped.toString(16).padStart(2, "0");
-    };
-
-    let left = stops[0];
-    let right = stops[stops.length - 1];
-    for (let i = 0; i < stops.length - 1; i++) {
-      if (t >= stops[i].t && t <= stops[i + 1].t) {
-        left = stops[i];
-        right = stops[i + 1];
-        break;
-      }
-    }
-
-    const localT =
-      right.t === left.t ? 0 : (t - left.t) / (right.t - left.t);
-    const a = toRgb(left.color);
-    const b = toRgb(right.color);
-
-    const r = a.r + (b.r - a.r) * localT;
-    const g = a.g + (b.g - a.g) * localT;
-    const bCh = a.b + (b.b - a.b) * localT;
-    return `#${toHex(r)}${toHex(g)}${toHex(bCh)}`;
   };
 
   const surfaceStyle = (feature: any) => {
-    const icra = getFeatureIcra(feature);
-    const fill = colorFromIcra(icra);
+    const level =
+      feature?.properties?.risk_level ?? feature?.properties?.risk_level_relative;
+    const fill = colorFromRiskLevel(level);
     return {
       color: "transparent",
       weight: 0,
@@ -459,7 +410,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
           Legenda do Mapa de Calor
         </p>
         <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-          Escala calibrada por nivel de risco
+          Escala categórica alinhada aos pontos
         </p>
 
         <div className="mt-2 h-2 w-full rounded-full bg-gradient-to-r from-[#22c55e] via-[#f59e0b] to-[#991b1b]" />
@@ -485,7 +436,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         </div>
 
         <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">
-          A cor do mapa usa faixas de risco para destacar variacoes operacionais.
+          A cor da malha segue o mesmo nivel de risco dos pontos.
         </p>
       </aside>
     </div>
